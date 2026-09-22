@@ -1,0 +1,17 @@
+[
+  {
+    "prompt": "Une petite maison creuse avec un toit plat.",
+    "plan": "Objet : maison\nBoite englobante : 8 tenons (L) x 6 tenons (l) x 4 plates (H)\nSymetrie : aucune\nSections :\n  1. Structure   z=0..3   boite pleine tan, puis interieur creuse (sol et toit pleins, murs creux)\nPalette : structure=tan",
+    "design_file": "maison.json"
+  },
+  {
+    "prompt": "Une petite voiture rouge avec une cabine grise.",
+    "plan": "Objet : voiture\nBoite englobante : 6 tenons (L) x 10 tenons (l) x 4 plates (H)\nSymetrie : aucune\nSections :\n  1. Chassis   z=0..1   bloc plein rouge, pleine largeur/longueur\n  2. Cabine    z=2..3   bloc plein gris clair, plus petit, pose sur le chassis\nPalette : chassis=red, cabine=light_gray",
+    "design_file": "voiture.json"
+  },
+  {
+    "prompt": "Un petit bateau avec une cabine et un mat.",
+    "plan": "Objet : bateau\nBoite englobante : 16 tenons (L) x 6 tenons (l) x 8 plates (H)\nSymetrie : aucune\nSections :\n  1. Coque   z=0..1   bloc plein brun-rouge, bas et large\n  2. Cabine  z=2..3   bloc plein tan, plus petit, pose sur la coque\n  3. Mat     z=4..7   colonne blanche fine, posee sur la cabine\nPalette : coque=reddish_brown, cabine=tan, mat=white",
+    "design_file": "bateau.json"
+  }
+]

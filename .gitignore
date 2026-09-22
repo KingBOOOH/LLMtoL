@@ -1,0 +1,28 @@
+# --- Sorties de generation (jamais versionnees) ---
+outputs/
+eval/results/
+
+# --- Artefacts generes par tools/build_from_design.py ---
+# tests/fixtures/handmade_two_bricks.ldr est ecrit A LA MAIN (reference empirique des
+# conventions LDraw, tache 1.1) : il doit rester versionne, d'ou l'absence de *.ldr global.
+prompts/fewshot/*.ldr
+tests/fixtures/demo_design.ldr
+
+# --- Grilles de voxels generees ---
+*.npy
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+env/
+*.egg-info/
+build/
+dist/
+
+# --- OS / OneDrive ---
+desktop.ini
+Thumbs.db
+.DS_Store

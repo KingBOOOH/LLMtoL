@@ -1,0 +1,8 @@
+{
+  "name": "voiture",
+  "bbox": [6, 10, 4],
+  "ops": [
+    {"op": "box", "from": [0, 0, 0], "to": [5, 9, 1], "color": "red"},
+    {"op": "box", "from": [1, 2, 2], "to": [4, 7, 3], "color": "light_gray"}
+  ]
+}

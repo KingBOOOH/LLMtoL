@@ -1,0 +1,9 @@
+{
+  "name": "bateau",
+  "bbox": [16, 6, 8],
+  "ops": [
+    {"op": "box", "from": [0, 0, 0], "to": [15, 5, 1], "color": "reddish_brown"},
+    {"op": "box", "from": [4, 1, 2], "to": [11, 4, 3], "color": "tan"},
+    {"op": "column", "at": [7, 2, 4], "height": 4, "color": "white"}
+  ]
+}

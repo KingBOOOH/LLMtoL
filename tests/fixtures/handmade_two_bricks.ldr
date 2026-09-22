@@ -1,0 +1,10 @@
+0 FILE handmade_two_bricks.ldr
+0 Name: handmade_two_bricks.ldr
+0 Author: Phase 1 - tache 1.1 (verification empirique des conventions LDraw)
+0 !LDRAW_ORG Unofficial_Model
+
+0 // Brique 2x4 rouge (3001) a l'origine
+1 4 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat
+
+0 // Brique 2x2 bleue (3003) posee dessus, decalee d'un tenon (20 LDU) en X
+1 1 20 -24 0 1 0 0 0 1 0 0 0 1 3003.dat

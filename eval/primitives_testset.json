@@ -1,0 +1,47 @@
+[
+  {
+    "id": "prim_cube", "category": "boite", "complexity": "simple",
+    "prompt": "Un cube plein de 8 tenons de cote (X et Y) et 8 plates de haut (Z).",
+    "reference": {"shape": "cube", "params": {"side": 8}}
+  },
+  {
+    "id": "prim_pave", "category": "boite", "complexity": "simple",
+    "prompt": "Un pave plein de 12 tenons de long (X), 4 tenons de large (Y) et 6 plates de haut (Z).",
+    "reference": {"shape": "box", "params": {"nx": 12, "ny": 4, "nz": 6}}
+  },
+  {
+    "id": "prim_croix", "category": "boite", "complexity": "moyen",
+    "prompt": "Une croix (signe plus) posee a plat : deux barres perpendiculaires de 3 tenons d'epaisseur qui se croisent au centre, chaque barre faisant 11 tenons de long au total, sur 3 plates de haut.",
+    "reference": {"shape": "cross", "params": {"arm": 4, "thickness": 3, "height": 3}}
+  },
+  {
+    "id": "prim_escalier", "category": "boite", "complexity": "moyen",
+    "prompt": "Un escalier de 5 marches, 4 tenons de large. Chaque marche monte d'une plate et avance d'un tenon : la premiere marche fait 1 plate de haut, la derniere 5 plates.",
+    "reference": {"shape": "stairs", "params": {"width": 4, "steps": 5}}
+  },
+  {
+    "id": "prim_tour", "category": "boite", "complexity": "simple",
+    "prompt": "Une tour carree pleine de 4 tenons de cote et 15 plates de haut.",
+    "reference": {"shape": "box", "params": {"nx": 4, "ny": 4, "nz": 15}}
+  },
+  {
+    "id": "prim_cylindre", "category": "courbe", "complexity": "moyen",
+    "prompt": "Un cylindre plein de 9 tenons de diametre et 4 plates de haut : la section horizontale est un disque.",
+    "reference": {"shape": "cylinder", "params": {"diameter": 9, "height": 4}}
+  },
+  {
+    "id": "prim_sphere", "category": "courbe", "complexity": "detaille",
+    "prompt": "Une sphere pleine de 7 tenons de diametre : chaque couche horizontale est un disque, le plus large au milieu, retrecissant vers le haut et vers le bas.",
+    "reference": {"shape": "sphere", "params": {"diameter": 7}}
+  },
+  {
+    "id": "prim_pyramide", "category": "courbe", "complexity": "moyen",
+    "prompt": "Une pyramide a base carree de 9 tenons de cote et 6 plates de haut : chaque couche est un carre plein, de plus en plus petit vers le sommet.",
+    "reference": {"shape": "pyramid", "params": {"base": 9, "height": 6}}
+  },
+  {
+    "id": "prim_anneau", "category": "courbe", "complexity": "detaille",
+    "prompt": "Un anneau : un cylindre de 11 tenons de diametre exterieur perce d'un trou circulaire de 5 tenons de diametre en son centre, sur 3 plates de haut.",
+    "reference": {"shape": "ring", "params": {"outer_diameter": 11, "inner_diameter": 5, "height": 3}}
+  }
+]

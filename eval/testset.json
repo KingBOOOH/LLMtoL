@@ -1,0 +1,25 @@
+[
+  {"id": "vehicule_01", "category": "vehicule", "complexity": "simple", "prompt": "Une petite voiture rouge, simple et compacte."},
+  {"id": "vehicule_02", "category": "vehicule", "complexity": "simple", "prompt": "Un camion basique avec une cabine et une benne."},
+  {"id": "vehicule_03", "category": "vehicule", "complexity": "moyen", "prompt": "Une voiture de sport bleue avec un becquet arriere."},
+  {"id": "vehicule_04", "category": "vehicule", "complexity": "moyen", "prompt": "Un bus scolaire jaune avec plusieurs fenetres."},
+  {"id": "vehicule_05", "category": "vehicule", "complexity": "detaille", "prompt": "Un camion de pompiers rouge avec une echelle, une cabine detaillee et des roues visibles."},
+
+  {"id": "batiment_01", "category": "batiment", "complexity": "simple", "prompt": "Une petite maison carree avec un toit plat."},
+  {"id": "batiment_02", "category": "batiment", "complexity": "simple", "prompt": "Une cabane en bois avec une porte."},
+  {"id": "batiment_03", "category": "batiment", "complexity": "moyen", "prompt": "Une maison a deux etages avec des fenetres et une cheminee."},
+  {"id": "batiment_04", "category": "batiment", "complexity": "moyen", "prompt": "Un phare blanc et rouge au bord de la mer."},
+  {"id": "batiment_05", "category": "batiment", "complexity": "detaille", "prompt": "Un chateau medieval avec des tours, des creneaux et un pont-levis."},
+
+  {"id": "creature_01", "category": "creature", "complexity": "simple", "prompt": "Un petit chien simple, debout sur quatre pattes."},
+  {"id": "creature_02", "category": "creature", "complexity": "simple", "prompt": "Un oiseau perche avec des ailes repliees."},
+  {"id": "creature_03", "category": "creature", "complexity": "moyen", "prompt": "Un dragon miniature avec des ailes et une longue queue."},
+  {"id": "creature_04", "category": "creature", "complexity": "moyen", "prompt": "Une araignee avec huit pattes symetriques."},
+  {"id": "creature_05", "category": "creature", "complexity": "detaille", "prompt": "Un robot humanoide avec des bras articules, une tete et des jambes detaillees."},
+
+  {"id": "objet_01", "category": "objet", "complexity": "simple", "prompt": "Une simple table basse rectangulaire."},
+  {"id": "objet_02", "category": "objet", "complexity": "simple", "prompt": "Un vase cylindrique pose sur un socle."},
+  {"id": "objet_03", "category": "objet", "complexity": "moyen", "prompt": "Une etagere a plusieurs niveaux avec des livres symbolises."},
+  {"id": "objet_04", "category": "objet", "complexity": "moyen", "prompt": "Une horloge murale ronde avec des aiguilles."},
+  {"id": "objet_05", "category": "objet", "complexity": "detaille", "prompt": "Un bateau a voile avec une coque, un pont, une cabine et un mat central."}
+]

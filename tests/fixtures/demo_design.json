@@ -1,0 +1,9 @@
+{
+  "name": "demo_maison",
+  "bbox": [8, 6, 5],
+  "ops": [
+    {"op": "box", "from": [0, 0, 0], "to": [7, 5, 3], "color": "tan"},
+    {"op": "carve", "from": [1, 1, 1], "to": [6, 4, 3]},
+    {"op": "layer", "z": 4, "origin": [1, 1], "grid": ["####"], "color": "reddish_brown"}
+  ]
+}

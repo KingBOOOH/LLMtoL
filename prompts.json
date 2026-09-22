@@ -1,0 +1,14 @@
+[
+  {
+    "prompt": "Generate a large flat square platform made of cubes: create a 10x10 grid on the X/Z plane centered at (0,0,0), all cubes at Y=0, cube size is 1x1x1, spacing is 2 units (integer coordinates only, no decimals), ensure perfect alignment and symmetry, use exact coordinates only, return ONLY valid JSON following the schema, no text, no explanation, no markdown.",
+    "iterations": 2
+  },
+  {
+    "prompt": "Generate a solid rectangular prism made of cubes: create a 6x4x3 block centered at (0,0,0), fully filled (no hollow parts), cube size is 1x1x1, spacing is 2 units (integer coordinates only, no decimals), ensure perfect symmetry and uniform structure, use exact coordinates only, return ONLY valid JSON following the schema, no text, no explanation, no markdown.",
+    "iterations": 2
+  },
+  {
+    "prompt": "Generate a large cross shape on 3 axes made of cubes: create a central cube at (0,0,0), then extend 4 cubes in each direction along X, Y, and Z axes, forming a symmetric 3D plus structure, cube size is 1x1x1, spacing is 2 units (integer coordinates only, no decimals), ensure perfect alignment and balance, use exact coordinates only, return ONLY valid JSON following the schema, no text, no explanation, no markdown.",
+    "iterations": 2
+  }
+]
