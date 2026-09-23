@@ -1,6 +1,6 @@
 """Assemble les quatre rendus en une planche unique (chaine v0).
 
-Lit render_{top,bottom,left,right}.png dans LEGO_WORK_DIR et ecrit final.png : grille
+Lit render_{top,front,right,iso}.png dans LEGO_WORK_DIR et ecrit final.png : grille
 2x2, separateurs blancs, nom de la vue en surimpression. Echoue bruyamment si un rendu
 manque — mieux vaut une erreur nette qu'une planche silencieusement incomplete.
 """
@@ -15,10 +15,10 @@ WORK_DIR = os.environ.get("LEGO_WORK_DIR", os.getcwd())
 # =========================
 
 images_path = {
-    "top":    os.path.join(WORK_DIR, "render_top.png"),
-    "bottom": os.path.join(WORK_DIR, "render_bottom.png"),
-    "left":   os.path.join(WORK_DIR, "render_left.png"),
-    "right":  os.path.join(WORK_DIR, "render_right.png"),
+    "top":   os.path.join(WORK_DIR, "render_top.png"),
+    "front": os.path.join(WORK_DIR, "render_front.png"),
+    "right": os.path.join(WORK_DIR, "render_right.png"),
+    "iso":   os.path.join(WORK_DIR, "render_iso.png"),
 }
 
 images = {k: Image.open(v) for k, v in images_path.items()}
@@ -29,10 +29,10 @@ final_img = Image.new("RGB", (w * 2, h * 2), (20, 20, 20))
 draw = ImageDraw.Draw(final_img)
 
 positions = {
-    "top":    (0, 0),
-    "right":  (w, 0),
-    "left":   (0, h),
-    "bottom": (w, h),
+    "top":   (0, 0),
+    "front": (w, 0),
+    "right": (0, h),
+    "iso":   (w, h),
 }
 
 for key, pos in positions.items():
@@ -55,10 +55,10 @@ except:
     font = ImageFont.load_default()
 
 labels = {
-    "top":    "TOP VIEW",
-    "right":  "RIGHT VIEW",
-    "left":   "LEFT VIEW",
-    "bottom": "BOTTOM VIEW",
+    "top":   "TOP VIEW",
+    "front": "FRONT VIEW",
+    "right": "RIGHT VIEW",
+    "iso":   "ISO VIEW",
 }
 
 offset = 10

@@ -1,25 +1,23 @@
-"""Harnais d'evaluation (Phase 2 tache 2.3 ; etendu Phase 3 tache 3.3 pour v1).
+"""Harnais d'evaluation (Phase 2 tache 2.3 ; etendu Phase 3 tache 3.3).
 
-Mesure une version de la pipeline sur eval/testset.json (n generations par prompt,
-seeds fixes et journalises) -> CSV + resume Markdown dans eval/results/.
+Mesure la pipeline sur un jeu de test (n generations par prompt, seeds fixes et
+journalisees) -> CSV + resume Markdown dans eval/results/.
 
-Deux versions generables :
-- "v0" : pipeline d'origine (src/prompt.py, liste de cubes bruts, pas de vraies pieces
-  LEGO). Notee avec un SOUS-ENSEMBLE des controles de src.validator qui ont un sens
-  sans catalogue de pieces reel (connexite, taux de remplissage, centre de masse) —
-  collisions/pieces-flottantes/joints ne s'appliquent qu'a une sortie DSL+placements.
-- "v1" : planificateur + designer contraint par le DSL (src.planner + src.designer,
-  Phase 3), avec boucle de reparation (max 2). Notee avec la validation COMPLETE de
-  src.validator (tous les controles).
+Genere via src.planner + src.designer (plan en texte libre, puis design contraint par
+le schema DSL avec boucle de reparation), puis note avec la validation complete de
+src.validator. Sur un jeu de test primitives, la ressemblance a la forme demandee est
+mesuree en plus par l'IoU contre une reference calculee analytiquement.
 
-ATTENTION a l'interpretation d'un score v1 < score v0 : v1 est jugee par un validateur
-strictement plus severe (colisions/flottement/joints en plus), donc les scores ne sont
-PAS directement comparables terme a terme — c'est le TAUX DE VALIDITE (errors == [])
-et le taux de reparation qui mesurent le mieux le progres reel.
+La chaine d'origine ("v0", le LLM produisait directement une liste de cubes) a ete
+retiree du projet. Ses mesures de reference restent figees dans eval/results/ : elles
+ne sont plus regenerables, mais restent lisibles par --compare. Attention en les
+relisant, les scores ne sont PAS comparables terme a terme — v0 etait notee par un
+sous-ensemble des controles, faute de vraies pieces. Ce sont le taux de validite et la
+connexite qui mesurent le progres reel.
 
 Usage:
-    python -m eval.run_eval --version v0 --n 3
     python -m eval.run_eval --version v1 --n 3
+    python -m eval.run_eval --version v1prim --n 3 --testset eval/primitives_testset.json
     python -m eval.run_eval --compare eval/results/v0_<date>.csv eval/results/v1_<date>.csv
 """
 
@@ -27,20 +25,14 @@ import argparse
 import csv
 import json
 import os
-import subprocess
 import sys
 import time
 import zlib
 
-import numpy as np
-
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.llm_client import LLMCallError
 from src.primitives import build_reference, voxel_iou
-from src.validator import check_center_of_mass, check_connectivity, check_fill_rate
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PROMPT_SCRIPT = os.path.join(BASE_DIR, "src", "prompt.py")
 EVAL_DIR = os.path.dirname(os.path.abspath(__file__))
 RESULTS_DIR = os.path.join(EVAL_DIR, "results")
 DEFAULT_TESTSET = os.path.join(EVAL_DIR, "testset.json")
@@ -52,92 +44,12 @@ def _deterministic_seed(case_id, attempt):
     return (zlib.crc32(case_id.encode("utf-8")) % 1_000_000) + attempt
 
 
-def _rasterize_bricks(bricks):
-    """Convertit une liste de bricks v0 (position/size entiers) en grille voxel pour
-    reutiliser les controles generiques de src.validator qui ne dependent pas d'un
-    catalogue de pieces reelles (pas de collisions/flottement/joints en v0)."""
-    if not bricks:
-        return np.zeros((1, 1, 1), dtype=np.int16)
-
-    xs, ys, zs = [], [], []
-    for b in bricks:
-        px, py, pz = b["position"]
-        sx, sy, sz = b["size"]
-        xs += [px, px + sx]
-        ys += [py, py + sy]
-        zs += [pz, pz + sz]
-
-    min_x, min_y, min_z = min(xs), min(ys), min(zs)
-    shape = (max(1, max(xs) - min_x), max(1, max(ys) - min_y), max(1, max(zs) - min_z))
-    grid = np.zeros(shape, dtype=np.int16)
-    for b in bricks:
-        px, py, pz = b["position"]
-        sx, sy, sz = b["size"]
-        x0, y0, z0 = px - min_x, py - min_y, pz - min_z
-        grid[x0:x0 + sx, y0:y0 + sy, z0:z0 + sz] = 1
-    return grid
-
-
-def _score_v0(bricks):
-    """Note une sortie v0 avec le sous-ensemble de controles applicable a des cubes.
-
-    Pas de pieces reelles en v0, donc ni collisions, ni pieces flottantes, ni joints :
-    seuls connexite, taux de remplissage et centre de masse ont un sens. Le score
-    n'est donc PAS comparable terme a terme a celui de v1, juge plus severement.
-    """
-    grid = _rasterize_bricks(bricks)
-    n_components, _ = check_connectivity(grid)
-    fill_rate, _ = check_fill_rate(grid)
-    com_warnings = check_center_of_mass(grid)
-
-    score = 100.0
-    score -= 25 if n_components > 1 else 0
-    score -= 10 if fill_rate > 0.85 else 0
-    score -= 5 if com_warnings else 0
-    return max(0.0, min(100.0, score)), n_components, fill_rate
-
-
 def run_one(prompt_text, seed, work_dir, reference=None):
-    """Genere une sortie v0 via src/prompt.py (sous-processus) et la mesure.
+    """Genere via src.planner + src.designer et mesure le resultat.
 
-    Sous-processus plutot qu'import : prompt.py est un script a code de haut niveau,
-    l'importer declencherait son execution.
+    Appels directs plutot que sous-processus : ces deux modules sont des fonctions
+    pures, sans etat global mutable d'une generation a l'autre.
     """
-    os.makedirs(work_dir, exist_ok=True)
-    env = os.environ.copy()
-    env["LEGO_WORK_DIR"] = work_dir
-    env["PYTHONIOENCODING"] = "utf-8"
-
-    t0 = time.time()
-    result = subprocess.run(
-        ["python", PROMPT_SCRIPT, prompt_text, str(seed)],
-        env=env, capture_output=True, text=True, encoding="utf-8", errors="replace",
-    )
-    duration = time.time() - t0
-
-    model_path = os.path.join(work_dir, "model.json")
-    valid_json = result.returncode == 0 and os.path.isfile(model_path)
-
-    row = {"valid_json": valid_json, "duration_s": round(duration, 2),
-           "n_pieces": 0, "score": 0.0, "n_components": 0, "fill_rate": 0.0,
-           "repairs_used": 0, "iou": ""}
-
-    if valid_json:
-        with open(model_path, "r", encoding="utf-8") as f:
-            bricks = json.load(f).get("bricks", [])
-        score, n_components, fill_rate = _score_v0(bricks)
-        row.update({"n_pieces": len(bricks), "score": round(score, 1),
-                    "n_components": n_components, "fill_rate": round(fill_rate, 3)})
-        if reference is not None:
-            row["iou"] = round(voxel_iou(build_reference(reference), _rasterize_bricks(bricks)), 3)
-
-    return row
-
-
-def run_one_v1(prompt_text, seed, work_dir, reference=None):
-    """Genere via src.planner + src.designer (Phase 3). Appels directs (pas de
-    subprocess) : ces deux modules sont des fonctions pures sans etat global
-    mutable pertinent entre generations."""
     os.makedirs(work_dir, exist_ok=True)
     t0 = time.time()
 
@@ -168,12 +80,56 @@ def run_one_v1(prompt_text, seed, work_dir, reference=None):
     return row
 
 
-def run_eval(version, testset_path, n_per_prompt, out_dir):
+def _row_from_existing(work_dir, reference):
+    """Recalcule une ligne depuis un design.json deja sur disque, sans appel LLM.
+
+    Support de --resume : tout l'aval de la generation (compile, pave, valide) est
+    deterministe, donc les metriques obtenues sont identiques a celles qu'aurait
+    produites le run d'origine. Retourne None s'il n'y a rien a reprendre.
+    """
+    design_path = os.path.join(work_dir, "design.json")
+    if not os.path.isfile(design_path):
+        return None
+
+    from src.compiler import compile_design
+    from src.tiler import tile
+    from src.validator import validate
+
+    with open(design_path, "r", encoding="utf-8") as f:
+        design_data = json.load(f)
+
+    voxels = compile_design(design_data)
+    placements = tile(voxels)
+    report = validate(voxels, placements, design_data)
+    metrics = report["metrics"]
+
+    n_repairs = sum(1 for e in os.listdir(work_dir)
+                    if e.startswith("designer_repair") and e.endswith("_meta.json"))
+    duration = 0.0
+    for entry in os.listdir(work_dir):
+        if entry.endswith("_meta.json"):
+            with open(os.path.join(work_dir, entry), "r", encoding="utf-8") as f:
+                duration += json.load(f).get("duration_s", 0.0)
+
+    row = {"valid_json": True, "duration_s": round(duration, 2),
+           "n_pieces": metrics["n_pieces"], "score": report["score"],
+           "n_components": metrics["n_components"], "fill_rate": metrics["fill_rate"],
+           "repairs_used": n_repairs, "iou": ""}
+    if reference is not None:
+        row["iou"] = round(voxel_iou(build_reference(reference), voxels), 3)
+    return row
+
+
+def run_eval(version, testset_path, n_per_prompt, out_dir, resume=False):
     """Execute le jeu de test complet et ecrit CSV + resume Markdown.
 
-    La version choisit le generateur : "v1*" passe par planner+designer, tout le
-    reste par la chaine v0. Chaque generation a sa propre seed deterministe et son
-    propre dossier de travail, pour etre rejouable isolement.
+    `version` ne sert qu'a nommer les fichiers de sortie et le dossier de travail :
+    il n'y a plus qu'un seul generateur depuis le retrait de la chaine en cubes.
+    Chaque generation a sa propre seed deterministe et son propre dossier, pour etre
+    rejouable isolement.
+
+    resume=True : reprend un run interrompu en reutilisant les design.json deja
+    presents au lieu de les regenerer (les appels LLM sont la partie couteuse).
     """
     with open(testset_path, "r", encoding="utf-8") as f:
         testset = json.load(f)
@@ -185,8 +141,6 @@ def run_eval(version, testset_path, n_per_prompt, out_dir):
                   "duration_s", "n_pieces", "score", "n_components", "fill_rate",
                   "repairs_used", "iou"]
 
-    generator = run_one_v1 if version.startswith("v1") else run_one
-
     rows = []
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -195,10 +149,16 @@ def run_eval(version, testset_path, n_per_prompt, out_dir):
             for attempt in range(1, n_per_prompt + 1):
                 seed = _deterministic_seed(case["id"], attempt)
                 work_dir = os.path.join(out_dir, "_work", version, case["id"], f"attempt_{attempt:02d}")
-                print(f"[{version}] {case['id']} tentative {attempt}/{n_per_prompt} (seed={seed})...")
+                reused = _row_from_existing(work_dir, case.get("reference")) if resume else None
+                if reused is not None:
+                    print(f"[{version}] {case['id']} tentative {attempt}/{n_per_prompt} : reprise du design existant")
+                    generated = reused
+                else:
+                    print(f"[{version}] {case['id']} tentative {attempt}/{n_per_prompt} (seed={seed})...")
+                    generated = run_one(case["prompt"], seed, work_dir, case.get("reference"))
                 row = {"id": case["id"], "category": case["category"],
                        "complexity": case["complexity"], "attempt": attempt, "seed": seed,
-                       **generator(case["prompt"], seed, work_dir, case.get("reference"))}
+                       **generated}
                 writer.writerow(row)
                 f.flush()  # un run interrompu (OOM, Ctrl+C) garde les lignes deja faites
                 rows.append(row)
@@ -303,9 +263,11 @@ if __name__ == "__main__":
     parser.add_argument("--testset", default=DEFAULT_TESTSET)
     parser.add_argument("--out", default=RESULTS_DIR)
     parser.add_argument("--compare", nargs=2, metavar=("A", "B"))
+    parser.add_argument("--resume", action="store_true",
+                        help="reutilise les design.json deja presents au lieu de regenerer")
     args = parser.parse_args()
 
     if args.compare:
         compare(*args.compare)
     else:
-        run_eval(args.version, args.testset, args.n, args.out)
+        run_eval(args.version, args.testset, args.n, args.out, resume=args.resume)
