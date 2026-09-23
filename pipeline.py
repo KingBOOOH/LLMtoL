@@ -1,9 +1,27 @@
+"""Orchestrateur de la chaine v0 : prompts.json -> LM Studio -> Blender -> image finale.
+
+Enchaine les trois scripts (src/prompt.py, src/blender_script.py, src/img_output.py)
+en sous-processus, chacun recevant son dossier de travail par la variable
+d'environnement LEGO_WORK_DIR.
+
+Deux garanties :
+- une iteration qui echoue est journalisee et n'interrompt PAS les suivantes ;
+- chaque execution ecrit dans outputs/run_<horodatage>/, donc deux runs successifs
+  ne s'ecrasent jamais.
+
+La chaine v1 (DSL contraint, vraies pieces LEGO) ne passe pas par ce fichier :
+voir src/designer.py et tools/build_from_design.py.
+"""
+
 import os
 import time
 import subprocess
 import json
 import sys
 
+# A faire AVANT tout print : sortie redirigee (run en arriere-plan), Python utilise
+# sinon l'encodage Windows par defaut (cp1252), qui ne sait pas ecrire les emojis
+# ci-dessous et fait planter le script des la premiere ligne affichee.
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
@@ -35,6 +53,11 @@ total_iterations = 0
 
 
 def log_line(log_path, msg):
+    """Journalise une ligne horodatee a l'ecran ET dans le log.txt de l'iteration.
+
+    Le double envoi permet de diagnostiquer apres coup un run lance en arriere-plan,
+    dont la sortie console est perdue.
+    """
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
     line = f"[{timestamp}] {msg}"
     print(line)

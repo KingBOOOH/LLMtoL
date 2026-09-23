@@ -16,6 +16,12 @@ from src.tiler import joint_alignment_rate, tile
 
 
 def build(design_path, output_path=None):
+    """Compile un design.json en .ldr et affiche le temps passe a chaque etape.
+
+    Tout est deterministe : aucun appel LLM, donc rejouable a volonte sur un design
+    deja genere (utile pour tester une modification du pavage ou de l'export sans
+    repayer une generation).
+    """
     with open(design_path, "r", encoding="utf-8") as f:
         design = json.load(f)
 

@@ -1,3 +1,14 @@
+"""Scene Blender de la chaine v0 : model.json -> quatre rendus orthographiques.
+
+S'execute DANS Blender (`blender --background --python src/blender_script.py`), pas
+dans l'interpreteur du projet : le module bpy n'existe qu'a l'interieur de Blender,
+d'ou l'absence d'import de src.* ici. Le dossier de travail arrive par la variable
+d'environnement LEGO_WORK_DIR.
+
+Limite assumee : dessine des cubes colores, pas de vraies pieces LEGO. Le rendu des
+pieces reelles passera par l'import du .ldr via l'add-on ImportLDraw (non fait).
+"""
+
 import bpy
 import json
 import math
@@ -25,6 +36,11 @@ with open(PATH, "r") as f:
 # =========================
 
 def validate_scene(data):
+    """Revalide le JSON avant de toucher a la scene.
+
+    Double emploi voulu avec la validation de src/prompt.py : ce script peut etre
+    lance seul sur un model.json ecrit a la main, sans etre passe par la generation.
+    """
     if not isinstance(data, dict) or "bricks" not in data:
         raise Exception("❌ JSON must have a 'bricks' key")
 
@@ -89,6 +105,7 @@ DEFAULT_COLOR = (0.8, 0.8, 0.8, 1.0)
 # =========================
 
 def apply_material(obj, rgba, name):
+    """Cree et applique un materiau Principled BSDF de la couleur donnee."""
     mat = bpy.data.materials.new(name=name)
     mat.use_nodes = True
     bsdf = mat.node_tree.nodes.get("Principled BSDF")
@@ -100,6 +117,11 @@ def apply_material(obj, rgba, name):
 # =========================
 
 def create_object(obj_type, position, size, color_name):
+    """Ajoute un cube a la scene, mis a l'echelle et colore.
+
+    Une couleur absente de COLOR_MAP retombe sur le gris avec un avertissement,
+    plutot que d'interrompre tout le rendu pour un nom mal orthographie.
+    """
     x, y, z = position
     w, h, d = size
 
@@ -135,6 +157,11 @@ cam_data.ortho_scale = 20
 bpy.context.scene.camera = cam_obj
 
 def set_camera_view(cam_obj, view):
+    """Place la camera sur une des quatre vues orthographiques.
+
+    Rotations exprimees dans le repere Blender (Z vertical, vers le haut), a ne pas
+    confondre avec celui de src/ldraw_writer.py (Y vertical, vers le bas).
+    """
     if view == "top":
         cam_obj.location = (0, 0, 10)
         cam_obj.rotation_euler = (0, 0, 0)

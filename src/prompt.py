@@ -1,3 +1,19 @@
+"""Generation v0 : demande directement au LLM une liste de cubes (pas de vraies pieces).
+
+Script, pas module : s'execute en sous-processus depuis pipeline.py ou eval/run_eval.py,
+avec le prompt en premier argument et une seed optionnelle en second. Ecrit model.json
+dans le dossier designe par la variable d'environnement LEGO_WORK_DIR.
+
+Approche conservee comme reference de comparaison mesuree face a la chaine v1 (DSL
+contraint). Sa limite est structurelle : le modele place des cubes un par un, sans rien
+qui garantisse que le resultat tienne debout — d'ou les membres detaches mesures sur les
+prompts de creatures.
+
+Trois tentatives en cas de JSON invalide. Elles sont a l'aveugle (meme requete rejouee),
+contrairement a la boucle de reparation de src.designer qui, elle, renvoie l'erreur au
+modele.
+"""
+
 import json
 import sys
 import os
@@ -100,6 +116,11 @@ def extract_json(content):
 # =========================
 
 def parse_and_validate(content):
+    """Parse le JSON et le valide contre SCHEMA.
+
+    Leve une exception au message lisible (repris tel quel dans error.txt et dans
+    la boucle de tentatives), plutot que de laisser remonter la trace brute.
+    """
     try:
         data = json.loads(content)
     except Exception as e:

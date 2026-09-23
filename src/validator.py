@@ -23,10 +23,17 @@ _NEIGHBORS_6 = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, 
 
 
 def _footprint(p):
+    """Emprise (w, d) reellement occupee, en tenant compte de la rotation eventuelle."""
     return (p.part.d, p.part.w) if p.rotated else (p.part.w, p.part.d)
 
 
 def check_collisions(placements, voxels):
+    """BLOQUANT — deux pieces qui occupent le meme voxel.
+
+    Le pavage de src.tiler ne peut pas en produire (il marque les voxels couverts au
+    fur et a mesure) : ce controle existe en defense en profondeur, pour le jour ou
+    des placements viendraient d'ailleurs.
+    """
     claim_count = np.zeros(voxels.shape, dtype=np.int16)
     errors = []
     for p in placements:
@@ -42,6 +49,13 @@ def check_collisions(placements, voxels):
 
 
 def check_floating(placements, voxels):
+    """AVERTISSEMENT — piece n'ayant aucun voxel rempli juste sous son emprise.
+
+    Volontairement non bloquant (voir la justification detaillee dans validate) :
+    le controle se declenche aussi sur des constructions parfaitement normales,
+    typiquement les plaques centrales d'un toit plat au-dessus d'une piece creuse.
+    Une piece posee au sol (z=0) est evidemment exclue.
+    """
     errors = []
     for p in placements:
         if p.z == 0:
@@ -108,10 +122,17 @@ def check_connectivity(voxels):
 
 
 def check_bbox_respect(design):
+    """AVERTISSEMENT — operation dont les coordonnees sortent du bbox declare.
+
+    Analyse le DSL source, pas la grille : le compilateur ayant deja clampe, l'ecart
+    serait invisible sur le resultat. Un debordement signale surtout un modele qui
+    s'est trompe dans ses propres dimensions.
+    """
     warnings = []
     bbox = design["bbox"]
 
     def check_point(op_idx, key, point):
+        """Signale chaque composante hors des bornes du bbox."""
         for axis, v in enumerate(point):
             if v < 0 or v >= bbox[axis]:
                 warnings.append(
@@ -136,6 +157,12 @@ def check_bbox_respect(design):
 
 
 def check_symmetry(voxels, design):
+    """AVERTISSEMENT — symetrie annoncee par un `mirror` mais non verifiee au final.
+
+    Ne se declenche que si le design utilise effectivement mirror. Une operation
+    posee APRES le mirror n'est pas dupliquee : c'est la cause habituelle de l'ecart.
+    Tolerance de 5 % pour ne pas signaler un detail isole.
+    """
     warnings = []
     axes = {op["axis"] for op in design["ops"] if op["op"] == "mirror"}
     for axis in axes:
@@ -152,6 +179,12 @@ def check_symmetry(voxels, design):
 
 
 def check_fill_rate(voxels):
+    """AVERTISSEMENT au-dela de 85 % — volume plein / volume du bbox.
+
+    Un taux tres eleve veut dire que le modele a rempli sa boite englobante : il a
+    produit un pave, pas un objet. Retourne (taux, avertissements) car le taux sert
+    aussi de metrique dans le rapport.
+    """
     bbox_volume = voxels.size
     filled = int(np.count_nonzero(voxels))
     rate = filled / bbox_volume if bbox_volume else 0.0

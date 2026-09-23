@@ -29,6 +29,15 @@ MAX_REPAIRS = 2
 
 
 def _build_fewshot_messages():
+    """Construit les exemples few-shot sous forme de vrais tours user/assistant.
+
+    Un exemple joue en dialogue ("voici une demande, voici le JSON que tu produis")
+    aligne nettement mieux qu'un exemple recopie dans le prompt system : le modele
+    voit un comportement d'assistant a imiter, pas un texte a lire. Les designs
+    proviennent de prompts/fewshot/, tous compiles et verifies visuellement.
+
+    Calcule une seule fois au chargement du module (les fichiers ne bougent pas).
+    """
     with open(os.path.join(FEWSHOT_DIR, "manifest.json"), "r", encoding="utf-8") as f:
         manifest = json.load(f)
 
@@ -62,6 +71,13 @@ def _extract_json(content):
 
 
 def _format_repair_message(errors, warnings):
+    """Redige le message de reparation envoye au modele apres un rejet.
+
+    Ne repete volontairement ni le prompt ni le plan : ils sont deja dans l'historique
+    de conversation. Le message se limite aux erreurs a corriger, chacune nommant la
+    piece et les coordonnees fautives — c'est ce qui rend la reparation ciblee plutot
+    qu'un simple nouvel essai.
+    """
     lines = ["Ton design precedent a ete rejete par le validateur geometrique.", "", "Erreurs :"]
     lines += [f"- {e}" for e in errors]
     if warnings:

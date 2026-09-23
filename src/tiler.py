@@ -24,6 +24,12 @@ _SORTED_PARTS = sorted(PARTS, key=lambda p: -(p.w * p.d * p.h))
 
 
 def _remaining_height(voxels, x, y, z, color, max_h=3):
+    """Compte les couches de MEME couleur empilees a partir de (x, y, z).
+
+    Plafonne a max_h=3, hauteur de la plus haute piece du catalogue : au-dela, la
+    reponse ne changerait aucun choix. Sert a savoir si une brique (3 plates) est
+    envisageable ici, ou s'il faut se rabattre sur une plate (1 plate).
+    """
     z_size = voxels.shape[2]
     h = 0
     while z + h < z_size and h < max_h and voxels[x, y, z + h] == color:
@@ -32,6 +38,12 @@ def _remaining_height(voxels, x, y, z, color, max_h=3):
 
 
 def _fits(voxels, covered, x, y, z, w, d, h, color):
+    """Teste si une piece w x d x h tient a (x, y, z).
+
+    Trois conditions : rester dans la grille, ne recouvrir aucun voxel deja pris
+    par une autre piece, et n'occuper que des voxels pleins de la MEME couleur
+    (une piece est monochrome, elle ne peut pas chevaucher deux couleurs).
+    """
     x_size, y_size, z_size = voxels.shape
     if x + w > x_size or y + d > y_size or z + h > z_size:
         return False
@@ -52,12 +64,29 @@ def _interior_edges(x, y, w, d, x_size, y_size):
 
 
 def _joint_penalty(prev_layer_edges, x, y, w, d, x_size, y_size):
+    """Compte les bords de la piece qui prolongeraient un joint de la couche du dessous.
+
+    Zero = la piece decale ses joints par rapport a l'assise inferieure (bon).
+    Chaque coincidence exacte vaut 1 point de penalite.
+    """
     xs, ys = _interior_edges(x, y, w, d, x_size, y_size)
     penalty = len(xs & prev_layer_edges["x"]) + len(ys & prev_layer_edges["y"])
     return penalty
 
 
 def _best_candidate(voxels, covered, x, y, z, color, remaining, prev_layer_edges, x_size, y_size):
+    """Choisit la meilleure piece posable a (x, y, z), ou None si aucune ne tient.
+
+    Ordre de preference : penalite de joint d'ABORD, volume ensuite. Cette priorite
+    est le coeur de l'algorithme et le fruit d'un debogage : avec l'ordre inverse
+    (volume d'abord, penalite en simple departage), un mur uniforme se faisait paver
+    a l'identique a chaque assise — 100 % de joints alignes, soit une fissure
+    verticale continue. En faisant primer la penalite, l'algorithme accepte une piece
+    un peu plus petite pour decaler le joint, et le decalage type appareillage de
+    maconnerie emerge tout seul (mesure a 0 % sur le mur de test).
+
+    Les deux orientations sont essayees pour les pieces non carrees.
+    """
     best = None
     for part in _SORTED_PARTS:
         if part.h > remaining:

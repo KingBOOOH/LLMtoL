@@ -45,17 +45,37 @@ ROTATE_90_Y = (0, 0, 1, 0, 1, 0, -1, 0, 0)
 
 
 def _placement_sort_key(p):
+    """Tri du bas vers le haut, puis par position.
+
+    L'ordre du fichier n'a aucune importance pour l'affichage, mais il correspond a
+    l'ordre de montage reel — necessaire a la generation d'une notice (Phase 5).
+    """
     return (p.z, p.y, p.x)
 
 
 def _ldraw_line(placement):
+    """Traduit un Placement en une ligne LDraw de type 1 (reference de piece).
+
+    Format : 1 <couleur> <x> <y> <z> <matrice 3x3> <fichier.dat>
+
+    Deux conversions delicates :
+    - passage du repere interne (X/Y en tenons, Z en plates vers le haut) au repere
+      LDraw (X/Z horizontaux, Y vertical vers le BAS) ;
+    - position du coin minimal vers le CENTRE de la piece, les pieces LDraw ayant
+      leur origine centree en X/Z.
+    """
     part = placement.part
     color_name = INDEX_COLOR[placement.color_index]
     ldraw_code = PALETTE[color_name]["ldraw_code"]
 
     w, d = (part.d, part.w) if placement.rotated else (part.w, part.d)
+    # X et Z : du coin minimal vers le centre de l'emprise. Le demi-tenon tombe
+    # toujours juste (20 LDU par tenon, donc w/2 * 20 = w * 10, entier).
     ldraw_x = round((placement.x + w / 2) * LDU_PER_STUD)
+    # Y : negatif car LDraw pointe vers le bas, et base sur le SOMMET de la piece
+    # (z + h) car son origine est a la base de ses tenons, pas sous la piece.
     ldraw_y = -((placement.z + part.h) * LDU_PER_PLATE)
+    # Y interne (2e axe horizontal) -> Z LDraw.
     ldraw_z = round((placement.y + d / 2) * LDU_PER_STUD)
 
     matrix = ROTATE_90_Y if placement.rotated else IDENTITY

@@ -32,11 +32,13 @@ VIEWER_NAMES = ["leocad", "ldview", "lpub"]
 
 
 def base_url():
+    """Derive l'URL racine du serveur depuis l'endpoint configure."""
     parts = urlsplit(config.LM_STUDIO_URL)
     return urlunsplit((parts.scheme, parts.netloc, "", "", ""))
 
 
 def check_models():
+    """Liste les modeles connus de LM Studio (API compatible OpenAI)."""
     url = base_url() + "/v1/models"
     try:
         r = requests.get(url, timeout=5)
@@ -48,6 +50,12 @@ def check_models():
 
 
 def check_model_details():
+    """Quantification et longueur de contexte du modele CHARGE.
+
+    Passe par /api/v0/models, API propre a LM Studio : l'endpoint OpenAI standard
+    n'expose pas ces champs. Absent sur les versions plus anciennes, d'ou le
+    drapeau "exposed" plutot qu'une valeur inventee.
+    """
     url = base_url() + "/api/v0/models"
     try:
         r = requests.get(url, timeout=5)
@@ -76,6 +84,11 @@ def check_model_details():
 
 
 def check_truncation():
+    """Verifie qu'une reponse se termine d'elle-meme (finish_reason == "stop").
+
+    Un "length" signale une generation coupee au plafond : le JSON arrive tronque
+    et on accuserait le modele a tort.
+    """
     payload = {
         "model": config.LM_STUDIO_MODEL,
         "messages": [
@@ -102,6 +115,11 @@ def check_truncation():
 
 
 def check_response_format():
+    """Verifie que le decodage contraint par schema fonctionne sur ce modele.
+
+    C'est le mecanisme dont depend tout l'alignement du projet : s'il ne repond
+    pas, rien en aval ne tient.
+    """
     payload = {
         "model": config.LM_STUDIO_MODEL,
         "messages": [{"role": "user", "content": "Return ok=true."}],
@@ -127,10 +145,12 @@ def check_response_format():
 
 
 def check_blender():
+    """Verifie que l'executable Blender existe au chemin de config.py."""
     return {"path": config.BLENDER_EXE, "exists": os.path.exists(config.BLENDER_EXE)}
 
 
 def check_ldraw_addon():
+    """Cherche l'add-on ImportLDraw dans les dossiers d'extensions de Blender."""
     found = [d for d in BLENDER_ADDON_DIRS if os.path.isdir(d)]
     ldraw_hits = []
     for d in found:
@@ -141,11 +161,13 @@ def check_ldraw_addon():
 
 
 def check_ldraw_library():
+    """Localise la bibliotheque de pieces LDraw (delegue a src.catalog)."""
     found = _find_ldraw_library()
     return {"searched": LDRAW_CANDIDATE_DIRS, "found": [found] if found else []}
 
 
 def check_viewers():
+    """Cherche un visualiseur LDraw installe (LeoCAD, LDView, LPub3D)."""
     found = []
     for base in VIEWER_DIRS:
         if not os.path.isdir(base):
@@ -162,6 +184,7 @@ def check_viewers():
 
 
 def main():
+    """Execute tous les controles et resume ce qui bloque quoi."""
     report = {}
 
     print("=" * 60)

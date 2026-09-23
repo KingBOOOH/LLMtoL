@@ -15,6 +15,11 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class Part:
+    """Une reference du catalogue, avec son emprise en unites de la grille interne.
+
+    frozen=True : les pieces sont partagees entre tous les Placement, les rendre
+    immuables evite qu'une modification accidentelle se propage partout.
+    """
     ldraw_id: str
     kind: str  # "brick" | "plate" | "tile"
     w: int  # emprise en tenons le long de l'axe X LDraw, matrice identite (non tourne)

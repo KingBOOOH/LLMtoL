@@ -113,6 +113,11 @@ def build_reference(spec):
 
 
 def _crop_to_content(grid):
+    """Recadre la grille sur sa boite englobante remplie (retire le vide autour).
+
+    C'est ce qui rend l'IoU insensible a la position : un cube correct place dans un
+    coin d'un grand bbox ne doit pas etre penalise pour autant.
+    """
     filled = np.argwhere(grid != 0)
     if len(filled) == 0:
         return np.zeros((1, 1, 1), dtype=np.int16)

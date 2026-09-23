@@ -22,6 +22,14 @@ OPS = ["box", "carve", "column", "layer", "mirror", "translate_group"]
 
 
 def _xyz_schema(maxima, minimum=0):
+    """Schema d'un triplet [x, y, z] d'entiers, borne axe par axe.
+
+    prefixItems fixe le type de chaque position ; minItems=maxItems=3 verrouille la
+    longueur. Pas de "items": false ici bien que ce soit la forme canonique en
+    Draft 2020-12 : LM Studio echoue a compiler un schema booleen en grammaire
+    ("Cannot use 'in' operator to search for 'const' in false"). C'est de toute
+    facon redondant, la longueur etant deja figee a 3.
+    """
     return {
         "type": "array",
         "prefixItems": [

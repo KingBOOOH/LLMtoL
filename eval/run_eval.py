@@ -79,6 +79,12 @@ def _rasterize_bricks(bricks):
 
 
 def _score_v0(bricks):
+    """Note une sortie v0 avec le sous-ensemble de controles applicable a des cubes.
+
+    Pas de pieces reelles en v0, donc ni collisions, ni pieces flottantes, ni joints :
+    seuls connexite, taux de remplissage et centre de masse ont un sens. Le score
+    n'est donc PAS comparable terme a terme a celui de v1, juge plus severement.
+    """
     grid = _rasterize_bricks(bricks)
     n_components, _ = check_connectivity(grid)
     fill_rate, _ = check_fill_rate(grid)
@@ -92,6 +98,11 @@ def _score_v0(bricks):
 
 
 def run_one(prompt_text, seed, work_dir, reference=None):
+    """Genere une sortie v0 via src/prompt.py (sous-processus) et la mesure.
+
+    Sous-processus plutot qu'import : prompt.py est un script a code de haut niveau,
+    l'importer declencherait son execution.
+    """
     os.makedirs(work_dir, exist_ok=True)
     env = os.environ.copy()
     env["LEGO_WORK_DIR"] = work_dir
@@ -158,6 +169,12 @@ def run_one_v1(prompt_text, seed, work_dir, reference=None):
 
 
 def run_eval(version, testset_path, n_per_prompt, out_dir):
+    """Execute le jeu de test complet et ecrit CSV + resume Markdown.
+
+    La version choisit le generateur : "v1*" passe par planner+designer, tout le
+    reste par la chaine v0. Chaque generation a sa propre seed deterministe et son
+    propre dossier de travail, pour etre rejouable isolement.
+    """
     with open(testset_path, "r", encoding="utf-8") as f:
         testset = json.load(f)
 
@@ -193,6 +210,7 @@ def run_eval(version, testset_path, n_per_prompt, out_dir):
 
 
 def _write_summary(rows, version, path):
+    """Redige le resume Markdown : agregats globaux, par categorie et par forme."""
     n = len(rows)
     valid_rows = [r for r in rows if r["valid_json"]]
     valid = len(valid_rows)
@@ -241,7 +259,14 @@ def _write_summary(rows, version, path):
 
 
 def compare(csv_a, csv_b):
+    """Affiche cote a cote deux runs (validite, score, IoU).
+
+    Attention a l'interpretation : entre v0 et v1, seuls la validite et l'IoU sont
+    directement comparables — les scores viennent de validateurs de severite
+    differente.
+    """
     def load_stats(path):
+        """Agrege un CSV : total, generations valides, score moyen, IoU moyen."""
         with open(path, newline="", encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
         valid_rows = [r for r in rows if r["valid_json"] == "True"]
@@ -257,10 +282,12 @@ def compare(csv_a, csv_b):
     label_a, label_b = os.path.basename(csv_a), os.path.basename(csv_b)
 
     def fmt_valid(stats):
+        """Formate le taux de validite en 'n/total (pourcentage)'."""
         ratio = stats["valid"] / stats["n"] if stats["n"] else 0.0
         return f"{stats['valid']}/{stats['n']} ({ratio:.0%})"
 
     def fmt_iou(stats):
+        """Formate l'IoU, ou '-' si le jeu de test n'a pas de reference."""
         return f"{stats['iou']:.3f}" if stats["iou"] is not None else "-"
 
     print(f"{'':22}{label_a:30}{label_b:30}")

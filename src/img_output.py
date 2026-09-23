@@ -1,3 +1,10 @@
+"""Assemble les quatre rendus en une planche unique (chaine v0).
+
+Lit render_{top,bottom,left,right}.png dans LEGO_WORK_DIR et ecrit final.png : grille
+2x2, separateurs blancs, nom de la vue en surimpression. Echoue bruyamment si un rendu
+manque — mieux vaut une erreur nette qu'une planche silencieusement incomplete.
+"""
+
 import os
 from PIL import Image, ImageDraw, ImageFont
 

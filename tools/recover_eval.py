@@ -31,6 +31,7 @@ FIELDNAMES = ["id", "category", "complexity", "attempt", "seed", "valid_json",
 
 
 def _load_testset_index():
+    """Indexe les deux jeux de test par id, pour retrouver categorie et reference."""
     index = {}
     for name in ("testset.json", "primitives_testset.json"):
         path = os.path.join(EVAL_DIR, name)
@@ -43,6 +44,7 @@ def _load_testset_index():
 
 
 def _sum_durations(attempt_dir):
+    """Reconstitue la duree totale en sommant les *_meta.json des appels LLM."""
     total = 0.0
     for entry in os.listdir(attempt_dir):
         if entry.endswith("_meta.json"):
@@ -52,10 +54,16 @@ def _sum_durations(attempt_dir):
 
 
 def _count_repairs(attempt_dir):
+    """Deduit le nombre de reparations du nombre de fichiers designer_repair*."""
     return sum(1 for e in os.listdir(attempt_dir) if e.startswith("designer_repair") and e.endswith("_meta.json"))
 
 
 def recover(work_dir, version):
+    """Reconstruit un CSV depuis les design.json survivants.
+
+    Recompile, repave et revalide chaque design : tout est deterministe, donc les
+    metriques obtenues sont identiques a celles du run d'origine.
+    """
     cases = _load_testset_index()
     rows = []
 
