@@ -1,0 +1,11 @@
+# Dependances de la pile web uniquement (conteneur api + agent cote hote).
+# La chaine de generation garde requirements.txt, qui n'a pas besoin de tout ceci.
+#
+# Versions relevees sur PyPI le 2026-10-10, pas supposees. SQLAlchemy est epingle sur
+# la 2.1.x deja installee sur l'hote : server/db.py est partage entre le conteneur et
+# l'agent, un ecart de version majeure entre les deux se paierait en bugs fantomes.
+fastapi==0.143.0
+uvicorn[standard]==0.54.0
+sqlalchemy==2.1.1
+psycopg[binary]==3.3.6
+python-dotenv==1.2.4

@@ -1,0 +1,53 @@
+# Base + API + interface en conteneurs. Blender, LM Studio et la bibliotheque LDraw
+# restent sur l'hote : un conteneur Linux ne peut pas executer blender.exe. C'est
+# l'agent (agent.py, cote hote) qui prend les jobs deposes en base par l'API.
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      # Publie sur la boucle locale uniquement : l'agent, sur l'hote, en a besoin.
+      - "127.0.0.1:${DB_HOST_PORT:-5442}:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      # Joue au PREMIER demarrage seulement (volume vide). Pour rejouer le schema :
+      # docker compose down -v
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Dans le reseau Docker la base s'appelle "db" et ecoute sur 5432.
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      OUTPUTS_ROOT: /outputs
+      AGENT_TIMEOUT_S: ${AGENT_TIMEOUT_S:-90}
+    ports:
+      # Pas d'authentification : on n'expose QUE la boucle locale.
+      - "127.0.0.1:${API_HOST_PORT:-8000}:8000"
+    volumes:
+      # LECTURE SEULE : l'API sert les rendus produits par l'agent, elle n'ecrit jamais
+      # dans outputs/. C'est l'agent qui les produit, sur l'hote.
+      - ./outputs:/outputs:ro
+      # Recouvre le server/ copie dans l'image : une modification de l'interface est
+      # visible au rechargement de la page, sans `docker compose build`. L'image garde
+      # sa propre copie, donc elle reste autonome sans ce montage.
+      - ./server:/app/server:ro
+
+volumes:
+  db_data:
