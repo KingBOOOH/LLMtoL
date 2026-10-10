@@ -21,6 +21,21 @@ TEST_SCHEMA = {
     "additionalProperties": False,
 }
 
+# Marche a suivre affichee quand un reglage parasite est detecte. Le chemin du fichier
+# est donne parce que le reglage y survit : le vider dans l'interface ne suffit pas si
+# le modele est recharge ensuite.
+FIX_OVERRIDE = """\
+  LM Studio applique le *System Prompt* et le *Structured Output* configures sur le
+  modele a toute requete qui n'envoie pas son propre response_format.
+  Corriger : LM Studio > My Models > le modele charge > vider System Prompt ET
+  Structured Output.
+  ATTENTION : le reglage REVIENT a chaque rechargement du modele. Il est stocke dans
+  .lmstudio/.internal/user-concrete-model-default-config/<editeur>/<modele>.json
+  (cles llm.prediction.systemPrompt et llm.prediction.structured).
+  Verifie : ni un system prompt envoye par la requete, ni un response_format valant
+  {"type":"text"} ne le neutralisent. Seul un json_schema explicite prend le dessus —
+  donc src/designer.py y resiste, src/planner.py NON."""
+
 BLENDER_ADDON_DIRS = [
     os.path.expandvars(r"%APPDATA%\Blender Foundation\Blender\5.1\scripts\addons"),
     os.path.expandvars(r"%APPDATA%\Blender Foundation\Blender\5.1\extensions"),
@@ -83,11 +98,53 @@ def check_model_details():
     }
 
 
+def detect_default_override(content):
+    """Detecte un reglage LM Studio parasite depuis une reponse a une demande de PROSE.
+
+    Fonction pure, sans reseau : c'est elle qui est testee, pas l'appel HTTP.
+
+    Pourquoi ce controle existe : LM Studio reinjecte le system prompt et le
+    Structured Output configures sur le modele des qu'une requete n'envoie pas son
+    propre response_format. Le symptome est que le modele renvoie une structure JSON
+    quel que soit le prompt. Ce piege a coute du temps quatre fois, et le diagnostic
+    ne le voyait pas : check_truncation envoyait bien la seule requete vulnerable
+    (sans response_format) mais ne regardait que finish_reason, jamais le contenu.
+
+    Retourne un motif explicatif, ou None si la reponse ressemble a de la prose.
+    """
+    texte = (content or "").strip()
+    if not texte:
+        return "reponse vide a une demande de texte libre"
+
+    # Une demande de paragraphe en prose qui revient en JSON valide : c'est le
+    # Structured Output du modele qui a ete applique par-dessus la requete.
+    if texte[0] in "[{":
+        try:
+            json.loads(texte)
+        except ValueError:
+            pass  # du texte qui commence par une accolade, pas du JSON : on laisse passer
+        else:
+            return "la reponse a une demande de prose est un JSON valide"
+
+    # Signature de la chaine v0 supprimee, encore presente dans les reglages du modele.
+    # On cherche "action" AVEC ses guillemets (donc une cle JSON) : une prose sur les
+    # briques peut mentionner le mot cube, elle n'ecrit pas une cle JSON.
+    bas = texte.lower()
+    if '"action"' in bas and ('"cube"' in bas or '"rectangle"' in bas):
+        return "la reponse reprend le schema action/cube/rectangle de la chaine v0 supprimee"
+
+    return None
+
+
 def check_truncation():
-    """Verifie qu'une reponse se termine d'elle-meme (finish_reason == "stop").
+    """Verifie qu'une reponse se termine d'elle-meme ET qu'aucun reglage ne la detourne.
 
     Un "length" signale une generation coupee au plafond : le JSON arrive tronque
     et on accuserait le modele a tort.
+
+    Cette requete n'envoie VOLONTAIREMENT pas de response_format : c'est la seule du
+    diagnostic a etre vulnerable au piege LM Studio, donc la seule capable de le
+    detecter. Son contenu est inspecte par detect_default_override.
     """
     payload = {
         "model": config.LM_STUDIO_MODEL,
@@ -107,11 +164,35 @@ def check_truncation():
     choice = (result.get("choices") or [{}])[0]
     finish_reason = choice.get("finish_reason")
     completion_tokens = result.get("usage", {}).get("completion_tokens")
+    content = (choice.get("message") or {}).get("content") or ""
+    override = detect_default_override(content)
     return {
-        "ok": finish_reason == "stop",
+        "ok": finish_reason == "stop" and override is None,
         "finish_reason": finish_reason,
         "completion_tokens": completion_tokens,
+        "override": override,
+        "content_preview": content.strip()[:160],
     }
+
+
+def preflight_llm():
+    """Controle minimal avant de depenser une generation. Retourne (ok, message).
+
+    Une seule requete, reutilisee de check_truncation : la troncature et le reglage
+    parasite se detectent sur la meme reponse. Destine a etre appele par pipeline.py
+    (et par lego.py / agent.py quand ils existeront), pas seulement par le diagnostic
+    complet — un run long ne doit pas demarrer sur un modele detourne.
+    """
+    res = check_truncation()
+    if res.get("error"):
+        return False, f"LM Studio injoignable : {res['error']}"
+    if res.get("override"):
+        return False, (f"Reglage LM Studio parasite : {res['override']}\n"
+                       f"  Reponse recue : {res['content_preview']!r}\n{FIX_OVERRIDE}")
+    if res.get("finish_reason") != "stop":
+        return False, (f"finish_reason={res['finish_reason']!r} au lieu de 'stop' — "
+                       "reponse tronquee, augmenter la longueur de contexte du modele")
+    return True, "LM Studio repond normalement a une requete non contrainte"
 
 
 def check_response_format():
@@ -209,9 +290,12 @@ def main():
     elif not md.get("exposed"):
         print("  (non expose par cette version/API de LM Studio — verifier manuellement dans l'interface)")
 
-    print("\n[3/7] Test de troncature (300 tokens demandes)...")
+    print("\n[3/7] Requete NON contrainte : troncature + reglage parasite...")
     report["truncation"] = check_truncation()
     print(json.dumps(report["truncation"], indent=2, ensure_ascii=False))
+    if report["truncation"].get("override"):
+        print(f"\n  /!\\ PIEGE LM STUDIO DETECTE : {report['truncation']['override']}")
+        print(FIX_OVERRIDE)
 
     print("\n[4/7] Test response_format json_schema...")
     report["response_format"] = check_response_format()
@@ -241,7 +325,14 @@ def main():
 
     if not report["models"].get("ok"):
         blocking_phase0.append("LM Studio ne repond pas sur /v1/models")
-    if not report["truncation"].get("ok"):
+    # Bloquant et non "action manuelle" : sous ce piege, le planificateur produit du
+    # JSON de cubes pour n'importe quel prompt. Lancer un run dans cet etat ne donne
+    # pas un resultat degrade, il donne un resultat sans aucun rapport avec la demande.
+    if report["truncation"].get("override"):
+        blocking_phase0.append(
+            f"Reglage LM Studio parasite ({report['truncation']['override']}) — "
+            "le planificateur est detourne, voir la marche a suivre ci-dessus")
+    elif report["truncation"].get("finish_reason") not in ("stop", None):
         manual_actions.append("finish_reason != 'stop' sur un test de 300 tokens — risque de troncature silencieuse")
     if not report["response_format"].get("ok"):
         manual_actions.append("response_format json_schema non fonctionnel avec le modele charge")

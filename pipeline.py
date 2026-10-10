@@ -162,6 +162,20 @@ def main():
     if not os.path.exists(PROMPTS_FILE):
         raise SystemExit("prompts.json introuvable")
 
+    # Avant de depenser la moindre generation : verifier que LM Studio n'est pas
+    # detourne par un System Prompt / Structured Output configure sur le modele. Sous
+    # ce piege le planificateur repond du JSON de cubes a n'importe quelle demande, et
+    # un run complet part entierement a la poubelle. Une seule requete, quelques
+    # secondes. --skip-env-check pour un run hors ligne.
+    if "--skip-env-check" not in sys.argv:
+        from tools.check_env import preflight_llm
+        ok, message = preflight_llm()
+        print(f"Pre-controle LM Studio : {message}")
+        if not ok:
+            raise SystemExit(
+                "\nRun interrompu AVANT toute generation.\n"
+                "Corrige le point ci-dessus, ou relance avec --skip-env-check pour forcer.")
+
     with open(PROMPTS_FILE, "r", encoding="utf-8") as f:
         prompts_data = json.load(f)
 
@@ -252,4 +266,8 @@ def main():
         print(f"Resume des erreurs : {summary_path}")
 
 
-main()
+# Garde indispensable : sans elle, un simple `from pipeline import generate_one`
+# declencherait un run complet de prompts.json. lego.py et agent.py (US-01, US-11)
+# doivent pouvoir importer la generation sans la lancer.
+if __name__ == "__main__":
+    main()
