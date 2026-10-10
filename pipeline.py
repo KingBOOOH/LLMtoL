@@ -66,11 +66,15 @@ def log_line(log_path, msg):
         f.write(line + "\n")
 
 
-def generate_one(prompt_text, iter_dir, log_path, seed=None):
-    """Genere model.ldr, la nomenclature et les etapes de notice pour une iteration.
+def generer_modele(prompt_text, iter_dir, log_path, seed=None):
+    """Produit plan.md, design.json, report.json et model.ldr. Rien de plus.
 
-    Retourne (dossiers_etapes, etapes) pour que l'appelant puisse inclure les etapes
-    dans le rendu par lot et assembler la notice ensuite.
+    Separe de la preparation de notice parce que les deux n'ont pas le meme cout :
+    ceci prend quelques dizaines de secondes, la notice demande un rendu Blender par
+    etape. Quand on propose plusieurs variantes a l'utilisateur, seule la variante
+    qu'il retient merite sa notice — d'ou la coupure ici (voir agent.py).
+
+    Retourne le dict de src.designer.design, enrichi de "nom".
     """
     log_line(log_path, "Planification...")
     t0 = time.time()
@@ -87,11 +91,20 @@ def generate_one(prompt_text, iter_dir, log_path, seed=None):
              f"{result['repairs_used']} reparation(s)")
 
     nom = result["design"].get("name", "model")
-    placements = result["placements"]
-
-    write_ldr(placements, os.path.join(iter_dir, "model.ldr"), nom)
+    write_ldr(result["placements"], os.path.join(iter_dir, "model.ldr"), nom)
     log_line(log_path, "model.ldr ecrit")
 
+    result["nom"] = nom
+    return result
+
+
+def preparer_notice(placements, iter_dir, nom, log_path):
+    """Ecrit la nomenclature et les sous-modeles d'etapes, prets a etre rendus.
+
+    Retourne (dossiers_etapes, vignettes_de_pieces, etapes). Au-dela de
+    NOTICE_MAX_ETAPES, les etapes sont ecrites mais leurs rendus sautes : les
+    dossiers retournes sont vides pour que l'appelant n'en demande aucun.
+    """
     rows = write_bom(placements, iter_dir, nom)
     log_line(log_path,
              f"Nomenclature : {sum(r['quantite'] for r in rows)} pieces, "
@@ -104,13 +117,28 @@ def generate_one(prompt_text, iter_dir, log_path, seed=None):
         log_line(log_path,
                  f"Notice : {len(etapes)} etapes ecrites, rendus SAUTES "
                  f"(> {NOTICE_MAX_ETAPES})")
-        return [], {}, etapes, placements
+        return [], {}, etapes
 
     # Une piece par (reference, couleur) pour l'encart, rendue une seule fois meme si
     # elle revient dans plusieurs etapes.
     piece_models = write_piece_models(etapes, os.path.join(steps_dir, "pieces"))
     log_line(log_path,
              f"Notice : {len(etapes)} etapes, {len(piece_models)} vignettes de pieces")
+    return etape_dirs, piece_models, etapes
+
+
+def generate_one(prompt_text, iter_dir, log_path, seed=None):
+    """Genere model.ldr, la nomenclature et les etapes de notice pour une iteration.
+
+    Composition de generer_modele + preparer_notice, conservee telle quelle pour
+    pipeline.py qui rend tout d'un bloc.
+
+    Retourne (dossiers_etapes, vignettes, etapes, placements).
+    """
+    result = generer_modele(prompt_text, iter_dir, log_path, seed=seed)
+    placements = result["placements"]
+    etape_dirs, piece_models, etapes = preparer_notice(
+        placements, iter_dir, result["nom"], log_path)
     return etape_dirs, piece_models, etapes, placements
 
 
