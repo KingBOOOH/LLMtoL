@@ -294,37 +294,47 @@ test verrouille le fait qu'il peut exprimer un cylindre ou une sphère exactemen
 (IoU aller-retour = 1,0). Le goulot est le modèle, à qui on demandait de rastériser des
 cercles en ASCII, c'est-à-dire de faire de l'arithmétique voxel de tête.
 
-**Effet des deux corrections** — le décalage `z` (prompt explicite + détection
-`check_ground_contact`) et les opérations `cylinder`/`sphere` (avec un quatrième exemple
-few-shot, `prompts/fewshot/phare.json`) :
+**Effet des corrections, mesuré** — opérations `cylinder`/`sphere`, puis correction du
+décalage `z`. Mesure figée : 3 tentatives par forme, via le vrai planificateur.
 
 | | avant | après |
 |---|---|---|
-| IoU formes en `box` | 0,777 | **0,886** |
-| IoU formes courbes | 0,391 | **0,835** |
-| durée moyenne, formes courbes | 339 s | **29 s** |
-| ne touchent pas le sol | 8/26 | **0/9** |
+| IoU global | 0,614 | **0,706** |
+| IoU formes courbes | 0,391 | **0,619** |
+| durée moyenne, formes courbes | 339 s | **131 s** |
+| IoU formes en `box` | 0,777 | 0,769 |
 
-Les deux cas qui portent le gain : `prim_cylindre` 0,272 → **1,000** (opération
-`cylinder` adoptée), `prim_anneau` 0,698 → **0,947** (`cylinder` + `carve`).
+Les gains viennent des formes courbes : `prim_cylindre` 0,272 → **0,750** (l'opération
+`cylinder` est adoptée), `prim_anneau` 0,698 → **0,838** (`cylinder` + `carve`),
+`prim_sphere` 0,145 → **0,527** avec un temps divisé par trois.
 
-**Réserve méthodologique importante.** Ces chiffres viennent du designer appelé
-directement, avec un plan écrit à la main et **une** tentative par forme ; la référence
-fait trois tentatives via le vrai planificateur. C'est une indication solide, pas une
-mesure comparable. La mesure figée reste à refaire :
+**Le décalage `z` venait du planificateur, pas du designer.** Son plan écrivait
+`z=1..8` et le designer obéissait au plan reçu. Corriger le prompt du designer n'a rien
+changé (8/26 → 9/26) ; la consigne appartient à `prompts/planner_system.txt`. Mesuré sur
+les 3 formes concernées : **9/9 hors sol → 0/9**, et IoU **0,819 → 1,000**.
+
+Ce défaut n'était pas cosmétique. En démarrant à `z=1` dans une boîte de hauteur *n*, le
+modèle se faisait tronquer d'une plate contre son propre bbox : les IoU observés valaient
+exactement (n−1)/n — 7/8 pour le cube, 5/6 pour le pavé, 3/4 pour le cylindre. Une
+couche entière perdue à chaque génération.
+
+**Ce qui reste à mesurer** — les 6 autres formes n'ont pas été rejouées depuis la
+correction du planificateur. La figure globale « après » est donc incomplète :
 
 ```powershell
-python -m eval.run_eval --version v1prim --n 3 --testset eval/primitives_testset.json
+python -u -m eval.run_eval --version v1prim --n 3 --testset eval/primitives_testset.json
 ```
 
-Elle exige d'avoir vidé le *Structured Output* dans LM Studio (voir *Piège LM Studio*) :
-le planificateur n'envoie pas de `response_format` et se fait donc détourner.
+Par petits lots de 3 ou 4 formes plutôt qu'en un seul run : un run opaque de 27
+générations dure plus de trente minutes sans permettre de distinguer « bloqué » de
+« lent ». Et `python -u`, sinon le journal reste vide.
 
-**Un cas résiste** — le modèle n'adopte pas `sphere`, il reste sur `layer` (IoU 0,526).
-La cause est dans le prompt figé lui-même, qui dicte la méthode : « chaque couche
-horizontale est un disque, le plus large au milieu, rétrécissant vers le haut et vers le
-bas ». Le modèle obéit au prompt. Ajouter un exemple few-shot avec `sphere` a été essayé
-et mesuré : aucun effet sur l'adoption et IoU dégradé (0,526 → 0,258), exemple retiré.
+**Un cas résiste** — le modèle n'adopte pas `sphere`, il reste sur `layer`. La cause est
+dans le prompt figé lui-même, qui dicte la méthode : « chaque couche horizontale est un
+disque, le plus large au milieu, rétrécissant vers le haut et vers le bas ». Celui du
+cylindre ne prescrit rien, d'où son adoption immédiate. Ajouter un exemple few-shot avec
+`sphere` a été essayé et mesuré : aucun effet sur l'adoption, IoU dégradé (0,526 →
+0,258), exemple retiré.
 
 Noter aussi qu'un IoU de 1,0 sur `prim_cylindre` signifie désormais « le modèle a choisi
 la bonne opération et les bons paramètres », plus « le modèle a su tracer un cercle ».
