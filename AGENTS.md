@@ -86,7 +86,12 @@ décrivent 400 pièces. Coordonnées entières, X/Y en tenons, Z en plates (1 br
   ]
 }
 
-Opérations : box, carve, column, layer (grille ASCII), mirror, translate_group.
+Opérations : box, carve, column, layer (grille ASCII), cylinder, sphere, mirror,
+translate_group. cylinder et sphere sont rastérisées par src/primitives.py — les
+MÊMES fonctions qui servent de référence à l'IoU, pour que les deux ne divergent
+jamais. Leur champ `at` est le coin bas de la boîte englobante, pas le centre.
+translate_group n'accepte PAS cylinder/sphere en imbriqué : chaque variante
+grossit la grammaire que LM Studio compile, et l'inférence est limitée par le CPU.
 Palette fermée de 12 couleurs (voir src/dsl_schema.py).
 
 Le schéma JSON est le principal outil d'alignement : bien borné, il rend le modèle
@@ -117,12 +122,34 @@ response_format. Le réglage REVIENT à chaque rechargement du modèle. Symptôm
 répond la même structure JSON quel que soit le prompt, même sans rapport. Ce piège a coûté
 du temps trois fois. Vérifier avant tout run long.
 
-Le modèle décale ses indices : environ un tiers des générations commencent à z=1 au lieu
-de z=0. Mesuré sur le jeu primitives, reproductible.
+Le modèle décalait ses indices (z=1 au lieu de z=0) : 10 designs sur 87 tous jeux
+confondus, 8 sur 26 sur le jeu primitives. Le system prompt dit maintenant explicitement
+que z=0 est le sol, et src/validator.py le détecte nommément (check_ground_contact,
+métrique z_min, colonne z_min du CSV d'éval). Remesuré : 0 sur 9 (voir la réserve
+méthodologique ci-dessous).
 
-Le modèle ne sait pas rastériser un cercle. Formes en box : IoU 0.83 à 1.00. Formes
-courbes : 0.15 à 0.70, et jusqu'à 35x plus lentes. Le DSL PEUT les exprimer exactement
-(test verrouillé, IoU aller-retour = 1.0) : le goulot est le modèle, pas le langage.
+LM Studio garde un Structured Output collé au modèle qwen3-coder-30b, hérité de la
+chaîne v0 supprimée (llm.prediction.structured + llm.prediction.systemPrompt dans
+.lmstudio/.internal/user-concrete-model-default-config/qwen/qwen3-coder-30b.json). Il
+force la réponse au schéma action/cube/rectangle. Vérifié : ni un system prompt à nous,
+ni un response_format {"type":"text"} ne le neutralisent — seul un json_schema explicite
+le fait. Le designer est donc immunisé, le planificateur NON : il répond
+[{"action":"create","object":"cube"}] à n'importe quoi. Se vide dans l'interface LM
+Studio (My Models > le modèle > vider System Prompt et Structured Output). Tant que ce
+n'est pas fait, eval/run_eval.py est inutilisable (il passe par le planificateur).
+
+Le modèle ne sait pas rastériser un cercle. Formes en box : IoU 0.78 de moyenne. Formes
+courbes : 0.39, pour un temps de génération 9x supérieur. Le DSL PEUT les exprimer
+exactement (test verrouillé, IoU aller-retour = 1.0) : le goulot était le modèle, pas le
+langage — d'où les opérations cylinder/sphere, qui déplacent le rastérisage vers Python.
+Conséquence sur la métrique : un IoU de 1.0 sur prim_cylindre mesure désormais que le
+modèle a choisi la bonne opération et les bons paramètres, plus qu'il a su tracer un
+cercle. Ce n'est pas la même chose, et c'est voulu.
+
+La sphère est ronde dans la grille mais APLATIE à l'écran (~2.5x) : `diameter` vaut
+autant de tenons en X/Y que de plates en Z, or un tenon fait 20 LDU et une plate 8.
+src/primitives.py assume ce choix et les références d'IoU l'utilisent ; changer l'un
+sans l'autre rendrait la métrique fausse.
 
 EEVEE rend les pièces en aplat uniforme (groupes de nœuds de l'add-on écrits pour Blender
 2.81). Utiliser Cycles, ou Workbench pour itérer vite.
@@ -152,7 +179,8 @@ Codex ne doit pas :
 demander au LLM de produire directement des briques ou des coordonnées finales ;
 simuler ou mocker un résultat pour faire passer un test — si une étape ne peut pas être
   testée, le dire ;
-ajouter des opérations au DSL tant que les six de base ne sont pas solides ;
+élargir le DSL au-delà des huit opérations actuelles sans une mesure qui montre
+  laquelle manque ;
 élargir le catalogue de pièces avant que la géométrie ne soit fiable ;
 corriger un mauvais alignement en allongeant le system prompt sans mesurer d'abord ;
 supprimer un fichier sans validation ;
@@ -163,15 +191,42 @@ casser la compatibilité Windows (attention à l'encodage : sortie redirigée = 
 Priorités techniques actuelles
 
 Priorité 1 :
-  corriger le décalage d'indice z (une phrase de prompt, touche un tiers des générations) ;
-  remesurer sur le jeu primitives après correction.
+  REFAIRE LA MESURE FIGÉE. Le décalage z et cylinder/sphere sont mesurés, mais avec le
+  designer appelé directement, un plan écrit à la main et UNE tentative par forme — la
+  référence, elle, fait 3 tentatives avec le vrai planificateur. C'est une indication
+  solide, pas la mesure comparable. Vider le Structured Output dans LM Studio, puis :
+    python -m eval.run_eval --version v1prim --n 3 --testset eval/primitives_testset.json
+  Référence : eval/results/v1prim_20260923_093512.csv.
+
+  Mesuré (indication, 1 tentative par forme) :
+    IoU boîte   0.777 -> 0.886
+    IoU courbe  0.391 -> 0.835
+    durée courbe  339s -> 29s
+    ne touchent pas le sol  8/26 -> 0/9
+    cylindre 0.272 -> 1.000 (op cylinder adoptée) ; anneau 0.698 -> 0.947 (cylinder+carve)
+
+  Reste ouvert : le modèle n'adopte PAS sphere, il garde layer (IoU 0.526). Cause
+  identifiée : le prompt figé du jeu de test dicte la méthode — "chaque couche
+  horizontale est un disque, le plus large au milieu, rétrécissant vers le haut et vers
+  le bas". Le modèle obéit au prompt. Celui du cylindre ne prescrit rien, d'où
+  l'adoption. Ajouter un exemple few-shot avec sphere a été essayé et MESURÉ : sans
+  effet sur l'adoption, et IoU dégradé (0.526 -> 0.258) — exemple retiré. La vraie
+  question est de savoir si on reformule un prompt du jeu figé (ce qui casse la
+  comparabilité) ou si on accepte que ce cas mesure l'obéissance au prompt.
 
 Priorité 2 :
-  ajouter des opérations cylinder/sphere au DSL — le modèle sait composer des volumes,
-  pas rastériser ; lui donner la primitive et laisser Python faire le rastérisage.
+  similarité sémantique (CLIP/VLM). Sur un objet non primitif, aucune métrique ne dit
+  aujourd'hui si le résultat ressemble au prompt. LM Studio sait servir plusieurs
+  modèles à la fois (champ `model` de la requête, llm_client.py l'envoie déjà) : un VLM
+  qui note render_iso.png est la bonne forme. À calibrer d'abord sur le jeu primitives,
+  où l'IoU donne la vérité terrain — si la note du VLM ne corrèle pas avec l'IoU connu,
+  le juge est inutilisable et ça se sait sans dépenser une génération.
+  Ne PAS mettre un modèle texte à vérifier la géométrie : src/validator.py le fait déjà,
+  exactement et gratuitement.
 
 Priorité 3 :
-  nomenclature des pièces (BOM), notice de montage, similarité sémantique (CLIP/VLM).
+  LPub3D n'a jamais été évalué avant d'écrire src/instructions.py (le plan le demandait).
+  À faire si la notice doit progresser sérieusement.
 
 Organisation des outputs
 

@@ -213,6 +213,30 @@ def check_center_of_mass(voxels):
     return []
 
 
+def check_ground_contact(voxels):
+    """Verifie que le modele touche le sol (z=0). Retourne (z_min, avertissements).
+
+    Defaut mesure : le modele decale ses indices et demarre a z=1 (8 designs sur 26 du
+    jeu primitives). check_center_of_mass le signalait deja, mais en parlant
+    d'instabilite — un diagnostic trompeur qui envoyait la boucle de reparation
+    corriger l'equilibre au lieu de l'origine. Ici le message nomme la vraie cause.
+
+    Volontairement SANS penalite de score propre : le meme defaut coute deja -5 via
+    check_center_of_mass, et double-penaliser casserait la comparaison avec les CSV
+    d'evaluation deja mesures.
+    """
+    filled = np.argwhere(voxels != 0)
+    if len(filled) == 0:
+        return None, []
+    z_min = int(filled[:, 2].min())
+    if z_min == 0:
+        return 0, []
+    return z_min, [
+        f"le modele ne touche pas le sol : sa partie la plus basse est a z={z_min} "
+        f"au lieu de z=0 (decale tout de {z_min} plate(s) vers le bas)"
+    ]
+
+
 def validate(voxels, placements, design):
     """Retourne un report dict : {"score": 0-100, "errors": [...], "warnings": [...]}."""
     empty_errors, empty_warnings = check_not_empty(voxels)
@@ -223,6 +247,7 @@ def validate(voxels, placements, design):
     symmetry_warnings = check_symmetry(voxels, design)
     fill_rate, fill_warnings = check_fill_rate(voxels)
     com_warnings = check_center_of_mass(voxels)
+    z_min, ground_warnings = check_ground_contact(voxels)
     joints_rate = joint_alignment_rate(placements) if placements else 0.0
 
     # "piece flottante" est un AVERTISSEMENT, pas un bloquant — ecart assume avec la
@@ -235,7 +260,7 @@ def validate(voxels, placements, design):
     # qui attrape le vrai defaut grave (membre detache flottant loin du corps).
     errors = empty_errors + collision_errors + connectivity_errors
     warnings = (empty_warnings + floating_errors + bbox_warnings + symmetry_warnings
-                + fill_warnings + com_warnings)
+                + fill_warnings + com_warnings + ground_warnings)
 
     score = 100.0
     score -= 100 if empty_errors else 0
@@ -257,6 +282,7 @@ def validate(voxels, placements, design):
             "n_components": n_components,
             "fill_rate": round(fill_rate, 3),
             "joint_alignment_rate": round(joints_rate, 3),
+            "z_min": z_min,
         },
     }
 

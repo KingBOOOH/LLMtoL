@@ -204,3 +204,22 @@ def test_validate_end_to_end_score_is_bounded():
     placements = tile(voxels)
     report = validate(voxels, placements, design)
     assert 0 <= report["score"] <= 100
+
+
+def test_ground_contact_flags_model_starting_at_z1():
+    """Le decalage d'indice z (defaut mesure : 8 designs sur 26) doit etre nomme."""
+    from src.validator import check_ground_contact
+
+    voxels = np.zeros((4, 4, 4), dtype=np.int16)
+    voxels[0:2, 0:2, 1:3] = 1
+    z_min, warnings = check_ground_contact(voxels)
+    assert z_min == 1
+    assert len(warnings) == 1 and "ne touche pas le sol" in warnings[0]
+
+
+def test_ground_contact_silent_when_model_sits_on_floor():
+    from src.validator import check_ground_contact
+
+    voxels = np.zeros((4, 4, 4), dtype=np.int16)
+    voxels[0:2, 0:2, 0:2] = 1
+    assert check_ground_contact(voxels) == (0, [])

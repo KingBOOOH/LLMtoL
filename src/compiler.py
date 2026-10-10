@@ -13,6 +13,8 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.dsl_schema import PALETTE_NAMES, validate_design
+from src.primitives import cylinder as _cylinder_mask
+from src.primitives import sphere as _sphere_mask
 
 COLOR_INDEX = {name: i + 1 for i, name in enumerate(PALETTE_NAMES)}  # 0 = vide
 INDEX_COLOR = {v: k for k, v in COLOR_INDEX.items()}
@@ -103,6 +105,51 @@ def _apply_layer(grid, op, warnings, op_idx):
         warnings.append(f"op #{op_idx} (layer) : certains voxels hors grille, ignores")
 
 
+def _stamp(grid, mask, at, color_idx, warnings, op_idx, kind):
+    """Pose un masque booleen dans la grille, son coin bas place en `at`.
+
+    Decoupe le masque au lieu de refuser l'operation : un volume qui depasse garde sa
+    partie utile, comme `layer`. Gere aussi un `at` negatif (possible via les deltas de
+    translate_group) en rognant le masque du cote bas.
+    """
+    lo = [max(0, at[i]) for i in range(3)]
+    crop = [lo[i] - at[i] for i in range(3)]  # part du masque sortie par le bas
+    hi = [min(at[i] + mask.shape[i], grid.shape[i]) for i in range(3)]
+    if any(hi[i] <= lo[i] for i in range(3)):
+        warnings.append(f"op #{op_idx} ({kind}) : entierement hors grille, ignoree")
+        return
+    sub = mask[crop[0]:crop[0] + hi[0] - lo[0],
+               crop[1]:crop[1] + hi[1] - lo[1],
+               crop[2]:crop[2] + hi[2] - lo[2]]
+    # Vue sur la grille : l'affectation par masque booleen ecrit bien dans l'original.
+    grid[lo[0]:hi[0], lo[1]:hi[1], lo[2]:hi[2]][sub] = color_idx
+    if sub.shape != mask.shape:
+        warnings.append(f"op #{op_idx} ({kind}) : depasse la grille, partie hors grille ignoree")
+
+
+def _apply_cylinder(grid, op, warnings, op_idx):
+    """Cylindre plein a section circulaire, extrude sur Z, rasterise par src.primitives.
+
+    `at` est le coin bas de la boite englobante (comme `from` de box), pas le centre :
+    pour un diametre pair le centre tomberait sur un demi-entier.
+    """
+    mask = _cylinder_mask(op["diameter"], op["height"]) != 0
+    _stamp(grid, mask, op["at"], COLOR_INDEX[op["color"]], warnings, op_idx, "cylinder")
+
+
+def _apply_sphere(grid, op, warnings, op_idx):
+    """Sphere pleine, rasterisee par src.primitives (meme coin bas que cylinder).
+
+    Attention : `diameter` vaut autant de tenons en X/Y que de plates en Z, alors qu'un
+    tenon fait 20 LDU et une plate 8 LDU. La sphere est donc ronde dans la grille mais
+    APLATIE a l'ecran (~2.5x). C'est volontaire : src.primitives utilise la meme
+    convention pour les references d'IoU, et en changer une seule des deux rendrait la
+    metrique fausse. Rendre la sphere physiquement ronde demande de changer les deux.
+    """
+    mask = _sphere_mask(op["diameter"]) != 0
+    _stamp(grid, mask, op["at"], COLOR_INDEX[op["color"]], warnings, op_idx, "sphere")
+
+
 def _apply_mirror(grid, op, warnings, op_idx):
     """Duplique par symetrie tout ce qui est deja construit, autour du milieu d'un axe.
 
@@ -136,7 +183,7 @@ def _shift_op(op, delta):
     if op["op"] in ("box", "carve"):
         shifted["from"] = _shift_point(op["from"], delta)
         shifted["to"] = _shift_point(op["to"], delta)
-    elif op["op"] == "column":
+    elif op["op"] in ("column", "cylinder", "sphere"):
         shifted["at"] = _shift_point(op["at"], delta)
     elif op["op"] == "layer":
         # origin est en 2D (X, Y) ; le decalage vertical s'applique au champ z.
@@ -176,6 +223,10 @@ def _dispatch(grid, op, warnings, op_idx):
         _apply_column(grid, op, warnings, op_idx)
     elif kind == "layer":
         _apply_layer(grid, op, warnings, op_idx)
+    elif kind == "cylinder":
+        _apply_cylinder(grid, op, warnings, op_idx)
+    elif kind == "sphere":
+        _apply_sphere(grid, op, warnings, op_idx)
     elif kind == "mirror":
         _apply_mirror(grid, op, warnings, op_idx)
     elif kind == "translate_group":

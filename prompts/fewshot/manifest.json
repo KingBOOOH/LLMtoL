@@ -13,5 +13,10 @@
     "prompt": "Un petit bateau avec une cabine et un mat.",
     "plan": "Objet : bateau\nBoite englobante : 16 tenons (L) x 6 tenons (l) x 8 plates (H)\nSymetrie : aucune\nSections :\n  1. Coque   z=0..1   bloc plein brun-rouge, bas et large\n  2. Cabine  z=2..3   bloc plein tan, plus petit, pose sur la coque\n  3. Mat     z=4..7   colonne blanche fine, posee sur la cabine\nPalette : coque=reddish_brown, cabine=tan, mat=white",
     "design_file": "bateau.json"
+  },
+  {
+    "prompt": "Un phare blanc avec une lanterne rouge au sommet.",
+    "plan": "Objet : phare\nBoite englobante : 10 tenons (L) x 10 tenons (l) x 16 plates (H)\nSymetrie : revolution autour de l'axe vertical\nSections :\n  1. Fut      z=0..11   cylindre blanc, diametre 8, pose au sol\n  2. Lanterne z=12..15  cylindre rouge plus etroit, diametre 6, posee sur le fut\nPalette : fut=white, lanterne=red",
+    "design_file": "phare.json"
   }
 ]

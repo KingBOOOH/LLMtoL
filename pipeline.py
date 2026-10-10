@@ -152,6 +152,13 @@ def render_all(work_dirs, run_dir, assemble_dirs=None, env_extra=None,
 
 
 def main():
+    """Execute prompts.json de bout en bout : generation, rendus, notices.
+
+    Les rendus sont groupes en DEUX lots Blender : les modeles complets au cadrage
+    serre (quatre vues, pour la planche), puis les images de notice dezoomees et en
+    vue iso seule. Separer les deux permet des reglages differents sans repayer un
+    demarrage par modele.
+    """
     if not os.path.exists(PROMPTS_FILE):
         raise SystemExit("prompts.json introuvable")
 

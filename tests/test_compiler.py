@@ -115,3 +115,52 @@ def test_out_of_bounds_box_is_clamped_not_raised(capsys):
     warnings_out = capsys.readouterr().out
     assert "clampee" in warnings_out
     assert grid[0, 0, 3] == COLOR_INDEX["blue"]  # colonne clampee au sommet de la grille
+
+
+def test_cylinder_matches_primitive_reference_exactly():
+    """L'op cylinder doit produire EXACTEMENT la reference qui sert a mesurer l'IoU.
+
+    C'est tout l'interet de l'operation : le modele declare le volume et n'a plus a
+    rasteriser de cercle. Si les deux rasteriseurs divergeaient, l'IoU deviendrait
+    faux sans que rien ne le signale.
+    """
+    from src.primitives import build_reference, voxel_iou
+
+    grid = compile_design(_design([8, 8, 10], [
+        {"op": "cylinder", "at": [0, 0, 0], "diameter": 8, "height": 10, "color": "red"}
+    ]))
+    reference = build_reference({"shape": "cylinder", "params": {"diameter": 8, "height": 10}})
+    assert voxel_iou(reference, grid) == 1.0
+    # Un cercle, pas un carre : les coins du bbox restent vides.
+    assert grid[0, 0, 0] == 0
+    assert grid[4, 0, 0] == COLOR_INDEX["red"]
+
+
+def test_sphere_matches_primitive_reference_exactly():
+    from src.primitives import build_reference, voxel_iou
+
+    grid = compile_design(_design([10, 10, 10], [
+        {"op": "sphere", "at": [0, 0, 0], "diameter": 10, "color": "blue"}
+    ]))
+    reference = build_reference({"shape": "sphere", "params": {"diameter": 10}})
+    assert voxel_iou(reference, grid) == 1.0
+    assert grid[0, 0, 0] == 0
+    assert grid[5, 5, 5] == COLOR_INDEX["blue"]
+
+
+def test_cylinder_at_is_bbox_corner_not_centre():
+    """`at` place le coin bas du volume : un cylindre pose en [2,2,1] ne touche pas z=0."""
+    grid = compile_design(_design([10, 10, 6], [
+        {"op": "cylinder", "at": [2, 2, 1], "diameter": 6, "height": 4, "color": "green"}
+    ]))
+    filled = np.argwhere(grid != 0)
+    assert filled[:, 0].min() == 2 and filled[:, 1].min() == 2
+    assert filled[:, 2].min() == 1 and filled[:, 2].max() == 4
+
+
+def test_oversized_sphere_is_clipped_not_raised(capsys):
+    grid = compile_design(_design([6, 6, 6], [
+        {"op": "sphere", "at": [3, 3, 3], "diameter": 10, "color": "red"}
+    ]))
+    assert np.count_nonzero(grid) > 0
+    assert "hors grille" in capsys.readouterr().out

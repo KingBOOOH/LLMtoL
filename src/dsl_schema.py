@@ -18,7 +18,8 @@ PALETTE_NAMES = [
 # bbox borne max en v1 (section 4.3) : [X, Y, Z] = [48, 48, 60]
 BBOX_MAX = [48, 48, 60]
 
-OPS = ["box", "carve", "column", "layer", "mirror", "translate_group"]
+OPS = ["box", "carve", "column", "layer", "cylinder", "sphere", "mirror",
+       "translate_group"]
 
 
 def _xyz_schema(maxima, minimum=0):
@@ -130,6 +131,38 @@ LAYER_OP = {
     "additionalProperties": False,
 }
 
+# cylinder/sphere : le modele DECLARE un volume courbe, il ne le rasterise pas.
+# Mesure qui justifie ces deux operations : sur le jeu primitives, les formes
+# exprimables en `box` atteignent 0.78 d'IoU, les formes courbes 0.39 pour un temps de
+# generation 9x superieur — parce que decrire un cercle en `layer` oblige le modele a
+# faire de l'arithmetique voxel de tete. Le DSL pouvait deja les exprimer exactement
+# (test aller-retour verrouille a IoU 1.0) : c'est le modele qui echoue, donc on lui
+# retire le rasterisage et src.compiler le fait avec src.primitives.
+CYLINDER_OP = {
+    "type": "object",
+    "required": ["op", "at", "diameter", "height", "color"],
+    "properties": {
+        "op": {"const": "cylinder"},
+        "at": POINT,
+        "diameter": {"type": "integer", "minimum": 1, "maximum": min(BBOX_MAX[0], BBOX_MAX[1])},
+        "height": {"type": "integer", "minimum": 1, "maximum": BBOX_MAX[2]},
+        "color": COLOR,
+    },
+    "additionalProperties": False,
+}
+
+SPHERE_OP = {
+    "type": "object",
+    "required": ["op", "at", "diameter", "color"],
+    "properties": {
+        "op": {"const": "sphere"},
+        "at": POINT,
+        "diameter": {"type": "integer", "minimum": 1, "maximum": min(BBOX_MAX)},
+        "color": COLOR,
+    },
+    "additionalProperties": False,
+}
+
 MIRROR_OP = {
     "type": "object",
     "required": ["op", "axis"],
@@ -145,6 +178,9 @@ TRANSLATE_GROUP_OP = {
     "required": ["op", "ops", "delta", "count"],
     "properties": {
         "op": {"const": "translate_group"},
+        # Volontairement SANS cylinder/sphere : chaque variante ajoutee ici grossit la
+        # grammaire que LM Studio compile, et l'inference est deja limitee par le CPU.
+        # A ouvrir seulement si une mesure montre qu'une serie de cylindres manque.
         "ops": {
             "type": "array",
             "items": {"anyOf": [BOX_OP, CARVE_OP, COLUMN_OP, LAYER_OP]},
@@ -167,7 +203,8 @@ SCHEMA = {
         "ops": {
             "type": "array",
             "items": {
-                "anyOf": [BOX_OP, CARVE_OP, COLUMN_OP, LAYER_OP, MIRROR_OP, TRANSLATE_GROUP_OP]
+                "anyOf": [BOX_OP, CARVE_OP, COLUMN_OP, LAYER_OP, CYLINDER_OP, SPHERE_OP,
+                          MIRROR_OP, TRANSLATE_GROUP_OP]
             },
             "minItems": 1,
             "maxItems": 60,
