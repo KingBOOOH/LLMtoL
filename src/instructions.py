@@ -20,6 +20,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.ldraw_writer import write_ldr
+from src.validator import resume_constructibilite
 
 PIECES_PAR_ETAPE = int(os.environ.get("LEGO_PIECES_PAR_ETAPE", "8"))
 # Si l'utilisateur fixe la variable, son choix prime et le regroupement automatique est
@@ -202,14 +203,42 @@ def write_step_models(placements, steps_dir, model_name="modele"):
     return dossiers, etapes
 
 
-def write_notice_html(etapes, dossiers, path, model_name="modele", vue="iso"):
+def _bloc_etat(resume):
+    """Encadre d'ouverture de la notice : le modele tient-il debout ?
+
+    Un modele sans probleme le dit explicitement, plutot que d'afficher un encadre
+    vide qui laisserait croire a un oubli.
+    """
+    if resume is None:
+        return ""
+    if resume["ok"]:
+        return ("<div class='etat bon'><h3>Avant de commencer</h3>"
+                "Ce modele est d'un seul tenant, pose au sol, et chaque piece repose "
+                "sur quelque chose. Rien a surveiller.</div>")
+    points = "".join(f"<li>{p}</li>" for p in resume["phrases"])
+    return (f"<div class='etat attention'><h3>Avant de commencer</h3>"
+            f"<ul>{points}</ul></div>")
+
+
+def write_notice_html(etapes, dossiers, path, model_name="modele", vue="iso",
+                      rapport=None):
     """Assemble la notice HTML a partir des rendus deja produits pour chaque etape.
 
     Les images sont referencees en chemin relatif : la notice reste lisible tant qu'elle
     accompagne le dossier des etapes.
+
+    rapport : le rapport du validateur. S'il est fourni, la notice s'ouvre sur un etat
+    de constructibilite en francais et signale les etapes contenant une piece sans
+    support. Sans lui la notice reste correcte, simplement muette sur ce point — ce
+    qu'elle etait avant : l'utilisateur recevait quatre images et devait juger seul.
     """
     base = os.path.dirname(os.path.abspath(path))
     total = sum(len(e) for e in etapes)
+
+    resume = resume_constructibilite(rapport) if rapport else None
+    # Coordonnees des pieces sans support -> numeros d'etapes concernees. Les etapes
+    # etant une partition des placements, l'appartenance est exacte.
+    sans_support = {tuple(c) for c in (rapport or {}).get("metrics", {}).get("flottantes", [])}
 
     blocs = []
     for i, (etape, dossier) in enumerate(zip(etapes, dossiers), 1):
@@ -229,10 +258,16 @@ def write_notice_html(etapes, dossiers, path, model_name="modele", vue="iso"):
 
         visuel = (f"<img src='{rel}' alt='etape {i}'>" if dispo
                   else "<div class='manque'>rendu absent</div>")
+
+        n_sans_support = sum((p.x, p.y, p.z) in sans_support for p in etape)
+        alerte = (f"<p class='alerte'>{n_sans_support} piece(s) de cette etape n'ont "
+                  f"rien juste en dessous : maintiens-les en place le temps de poser "
+                  f"la suite.</p>" if n_sans_support else "")
+
         blocs.append(
             f"<section><h2>Etape {i} <small>/ {len(etapes)}</small></h2>"
             f"{visuel}<p class='ajout'><strong>{len(etape)} piece(s) a poser :</strong> "
-            f"{liste}</p></section>"
+            f"{liste}</p>{alerte}</section>"
         )
 
     html = f"""<!doctype html>
@@ -250,10 +285,19 @@ def write_notice_html(etapes, dossiers, path, model_name="modele", vue="iso"):
  .ajout {{ margin: .8rem 0 0; font-size: .92rem; }}
  .manque {{ padding: 3rem; background: #f0f0f0; color: #999; text-align: center;
             border-radius: 6px; }}
+ .alerte {{ margin: .6rem 0 0; padding: .5rem .7rem; font-size: .9rem;
+            background: #fff6e0; border-left: 3px solid #e8a33d; border-radius: 4px; }}
+ .etat {{ padding: .9rem 1.1rem; border-radius: 8px; margin-bottom: 1.8rem;
+          border-left: 4px solid; }}
+ .etat.bon {{ background: #eef9f1; border-color: #4ec37a; }}
+ .etat.attention {{ background: #fff6e0; border-color: #e8a33d; }}
+ .etat h3 {{ margin: 0 0 .4rem; font-size: 1rem; }}
+ .etat ul {{ margin: .4rem 0 0; padding-left: 1.2rem; }}
 </style></head><body>
 <h1>Notice de montage — {model_name}</h1>
 <p class="resume">{len(etapes)} etapes, {total} pieces au total.
 Chaque image montre le modele <em>a la fin</em> de l'etape.</p>
+{_bloc_etat(resume)}
 {chr(10).join(blocs)}
 </body></html>"""
 

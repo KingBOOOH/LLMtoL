@@ -276,6 +276,39 @@ Les 357 s sont le vrai coût d'une notice de gros modèle. Ils se règlent par
 `LEGO_NOTICE_MAX_ETAPES` : baisser le plafond réduit proportionnellement le nombre de
 rendus.
 
+### Savoir si le modèle tient debout
+
+Le validateur calcule déjà tout — composantes connexes, pièces sans support, contact au
+sol, taux de remplissage — mais il l'écrivait en vocabulaire interne, dans un
+`report.json` que personne n'ouvre. L'utilisateur recevait quatre images et devait juger
+seul. C'est d'ailleurs comme ça qu'un défaut de pièces flottantes a été repéré : à l'œil,
+dans LeoCAD, pas par le projet.
+
+La notice s'ouvre donc sur un encadré « Avant de commencer », et chaque étape contenant
+une pièce sans support le signale sur place. **Aucun calcul nouveau** : uniquement la
+mise en mots de ce qui était déjà mesuré.
+
+```
+Avant de commencer
+  • 3 pièce(s) n'ont rien juste en dessous : il faudra les maintenir
+    en place le temps de poser la suite.
+```
+
+Un modèle sans défaut le dit explicitement plutôt que d'afficher un encadré vide, qui
+laisserait croire à un oubli.
+
+Deux points d'implémentation :
+
+- `check_floating` construisait des phrases ; il s'appuie maintenant sur
+  `pieces_flottantes()`, qui renvoie les **placements** eux-mêmes. Rattacher une pièce à
+  son numéro d'étape en ré-extrayant des coordonnées depuis du texte aurait été fragile.
+- `server/static/index.html` refait cette traduction en JavaScript, parce que le
+  conteneur de l'API ne contient pas `src/`. Les deux formulations sont identiques et
+  un commentaire de chaque côté le rappelle.
+
+Un test vérifie qu'aucune phrase ne contient de vocabulaire interne — pas de « voxel »,
+pas de « composante connexe ».
+
 ### La taille demandée
 
 `--taille petite|moyenne|grande` (ou `--bbox-max XxYxZ`) resserre les bornes du schéma
@@ -380,7 +413,7 @@ python -m tools.recover_eval eval/results/_work/v1 v1_recovered
 python -m pytest tests/ -q
 ```
 
-97 tests, couvrant le schéma DSL, le compilateur, le pavage, le validateur, les
+112 tests, couvrant le schéma DSL, le compilateur, le pavage, le validateur, les
 primitives, la nomenclature, le découpage en étapes et la détection du piège LM Studio.
 Deux d'entre eux valent d'être signalés : l'un verrouille le fait que le DSL exprime
 *exactement* un cylindre ou une sphère (IoU aller-retour = 1,0), l'autre que resserrer
@@ -438,7 +471,7 @@ le tableau du projet. Résumé :
 | #2 | mesure figée du jeu primitives | en cours — 3 formes sur 9 rejouées depuis la correction du `z` |
 | #9 | agent de génération | en cours — la plomberie est testée, **aucun modèle n'a encore été généré via la pile web** |
 | #5 | notice utilisable quelle que soit la taille | fait |
-| #6 | constructibilité annoncée en français | à faire |
+| #6 | constructibilité annoncée en français | fait |
 | #12 | notice PDF | à faire |
 
 **Fait** — assainissement (appel LLM centralisé, journalisation complète, coordonnées

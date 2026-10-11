@@ -125,13 +125,13 @@ def generate_one(prompt_text, iter_dir, log_path, seed=None):
     Composition de generer_modele + preparer_notice, conservee telle quelle pour
     pipeline.py qui rend tout d'un bloc.
 
-    Retourne (dossiers_etapes, vignettes, etapes, placements).
+    Retourne (dossiers_etapes, vignettes, etapes, placements, rapport).
     """
     result = generer_modele(prompt_text, iter_dir, log_path, seed=seed)
     placements = result["placements"]
     etape_dirs, piece_models, etapes = preparer_notice(
         placements, iter_dir, result["nom"], log_path)
-    return etape_dirs, piece_models, etapes, placements
+    return etape_dirs, piece_models, etapes, placements, result["report"]
 
 
 def render_all(work_dirs, run_dir, assemble_dirs=None, env_extra=None,
@@ -228,12 +228,12 @@ def main():
             print(f"{prompt_text[:70]}...")
 
             try:
-                etape_dirs, piece_models, etapes, placements = generate_one(
-                    prompt_text, iter_dir, log_path)
+                etape_dirs, piece_models, etapes, placements, result_report =                     generate_one(prompt_text, iter_dir, log_path)
                 generated.append(iter_dir)
                 # Les etapes partent dans le MEME lot Blender que le modele complet :
                 # un seul demarrage pour tout rendre.
-                notices.append((iter_dir, etape_dirs, piece_models, etapes, placements))
+                notices.append((iter_dir, etape_dirs, piece_models, etapes, placements,
+                                result_report))
                 notice_dirs.extend(etape_dirs)
                 notice_dirs.extend(piece_models.values())
             except (LLMCallError, RuntimeError) as e:
@@ -258,7 +258,8 @@ def main():
         render_all(notice_dirs, run_dir, assemble_dirs=[], env_extra=env_marge,
                    manifest_name="_manifest_notice.txt")
 
-    for iter_dir, etape_dirs, piece_models, etapes, placements in notices:
+    for (iter_dir, etape_dirs, piece_models, etapes, placements,
+         result_report) in notices:
         nom = os.path.basename(os.path.dirname(iter_dir))
         if etape_dirs:
             composees = compose_all_steps(etapes, etape_dirs, piece_models)
@@ -267,7 +268,8 @@ def main():
         images = {cle: os.path.join(d, "render_iso.png") for cle, d in piece_models.items()}
         write_bom(placements, iter_dir, nom, piece_images=images)
         n = write_notice_html(etapes, etape_dirs or [""] * len(etapes),
-                              os.path.join(iter_dir, "notice.html"), nom)
+                              os.path.join(iter_dir, "notice.html"), nom,
+                              rapport=result_report)
         print(f"Notice : {n} etapes -> {os.path.join(iter_dir, 'notice.html')}")
 
     print(f"\n=========================")

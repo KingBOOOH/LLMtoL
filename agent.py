@@ -215,7 +215,12 @@ def finir(session, job):
 
     from src.compiler import compile_design
     from src.tiler import tile
-    placements = tile(compile_design(retenue.design_json))
+    from src.validator import validate
+    voxels = compile_design(retenue.design_json)
+    placements = tile(voxels)
+    # Revalidation plutot que stockage du rapport : la chaine est deterministe, donc
+    # recalculer coute quelques millisecondes et evite une colonne de donnee derivee.
+    rapport = validate(voxels, placements, retenue.design_json)
 
     _etat(session, job, "nomenclature et etapes")
     etape_dirs, piece_models, etapes = pipeline.preparer_notice(
@@ -236,7 +241,8 @@ def finir(session, job):
         write_bom(placements, iter_dir, retenue.name or "modele", piece_images=images)
 
     write_notice_html(etapes, etape_dirs or [""] * len(etapes),
-                      os.path.join(iter_dir, "notice.html"), retenue.name or "modele")
+                      os.path.join(iter_dir, "notice.html"), retenue.name or "modele",
+                      rapport=rapport)
 
     # ponytail: pas de PDF ici, c'est US-10 (issue #12) — il depend de US-02 et US-03.
     # La colonne variantes.pdf reste nulle et l'interface affiche "en preparation".
