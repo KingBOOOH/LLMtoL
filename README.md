@@ -102,10 +102,17 @@ créatures sur 15 produisaient des membres détachés. Ses mesures de référenc
 figées dans `eval/results/` mais ne sont plus regénérables.
 
 ```powershell
-# bout-en-bout depuis prompts.json : modèles, rendus, nomenclature, notices
+# UN modèle complet, en une commande : plan, design, .ldr, 4 rendus, planche,
+# nomenclature, notice — dans un dossier horodaté
+python lego.py "Un phare blanc avec une lanterne rouge au sommet."
+
+# en bornant la taille, et en proposant plusieurs variantes
+python lego.py "Une petite maison" --taille petite --iterations 3
+
+# un lot depuis prompts.json
 python pipeline.py
 
-# une seule génération, sans rendu
+# le design seul, sans rendu ni notice
 python -m src.designer "Une petite maison avec un toit plat." outputs/mon_essai
 
 # depuis un design.json déjà écrit (aucun appel LLM)
@@ -169,6 +176,46 @@ Opérations : `box`, `carve`, `column`, `layer` (grille ASCII), `cylinder`, `sph
 
 Le schéma JSON est le principal outil d'alignement : bien borné, il rend le modèle
 *incapable* d'émettre une coordonnée aberrante ou une couleur hors palette.
+
+### La taille demandée
+
+`--taille petite|moyenne|grande` (ou `--bbox-max XxYxZ`) resserre les bornes du schéma
+JSON envoyé au modèle. C'est une **garantie par construction**, pas une consigne : le
+décodage contraint rend le modèle *incapable* d'émettre une coordonnée hors bornes.
+
+Demander « fais environ 200 pièces » dans le prompt ne marche pas — la chaîne v0 l'a
+prouvé (« grille 10×10 » → 49 cubes). Le schéma, lui, ne se négocie pas.
+
+Point d'implémentation : resserrer le `bbox` **sans** resserrer les coordonnées ne
+garantirait rien, le modèle déclarerait une boîte de 16 et y poserait des `box` allant
+jusqu'à 48. `build_schema()` reconstruit donc tout de façon cohérente — `bbox`,
+`from`/`to`, `at`, `height`, `diameter`, `delta` — et un test le verrouille.
+
+**Mesuré** sur « une petite maison aux murs creux et toit plat », 3 générations par
+taille, chaîne complète :
+
+| taille | borne | bbox réellement choisi | pièces |
+|---|---|---|---|
+| petite | `[16,16,20]` | `[16,16,20]` aux 3 essais | 50 – 143 |
+| moyenne | `[28,28,36]` | `[24,24,30]` aux 3 essais | 65 – 241 |
+| grande | `[48,48,60]` | `[16,16,24]`, `[24,24,24]`, `[16,16,12]` | 137 – 189 |
+
+**0 dépassement sur 9.** La borne est respectée à chaque fois.
+
+Deux limites à connaître, mesurées et non contournées :
+
+- **La borne est un plafond, pas une cible.** Pour `petite` elle mord — le modèle veut
+  plus grand et se fait plafonner. Pour `grande` elle ne mord jamais : le planificateur
+  choisit ce qu'il estime raisonnable pour l'objet demandé, et son prompt lui souffle
+  déjà de préférer des tailles modestes. Choisir `grande` n'a donc aujourd'hui **aucun
+  effet observable**. Pour qu'il en ait un, il faudrait un plancher en plus du plafond.
+- **Le nombre de pièces ne suit pas la taille.** Les fourchettes se chevauchent
+  largement et `grande` produit en moyenne moins de pièces que `moyenne`. Le nombre de
+  pièces dépend surtout du creux du modèle, pas de son encombrement. La garantie porte
+  sur la boîte englobante, pas sur le compte.
+
+La borne appliquée est consignée dans `report.json` (`bbox_max_applique`), pour qu'un
+résultat reste explicable après coup.
 
 ### Les formes courbes
 
@@ -234,9 +281,12 @@ python -m tools.recover_eval eval/results/_work/v1 v1_recovered
 python -m pytest tests/ -q
 ```
 
-Couvrent le schéma DSL, le compilateur, le pavage, le validateur et les primitives —
-y compris un test qui verrouille le fait que le DSL peut exprimer *exactement* un
-cylindre ou une sphère (IoU aller-retour = 1.0).
+97 tests, couvrant le schéma DSL, le compilateur, le pavage, le validateur, les
+primitives, la nomenclature, le découpage en étapes et la détection du piège LM Studio.
+Deux d'entre eux valent d'être signalés : l'un verrouille le fait que le DSL exprime
+*exactement* un cylindre ou une sphère (IoU aller-retour = 1,0), l'autre que resserrer
+le `bbox` resserre **aussi** les coordonnées — sans quoi la borne de taille ne
+garantirait rien.
 
 ---
 
