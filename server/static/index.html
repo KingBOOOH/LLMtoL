@@ -372,13 +372,17 @@ Vue.createApp({
       // fait cote Python, ici on ne fait que le dire en francais.
       const v = this.retenueDe(j);
       if (!v) return [];
+      // Formulations alignees sur src/validator.resume_constructibilite : le
+      // conteneur de l'API ne voit pas src/, d'ou cette reecriture en JavaScript.
       const out = [];
       if (v.n_components > 1)
-        out.push(`Le modèle est en ${v.n_components} morceaux séparés.`);
+        out.push(`Le modèle est en ${v.n_components} morceaux séparés : il ne tiendra pas d'un seul tenant.`);
       if (v.z_min > 0)
-        out.push(`La partie la plus basse est à ${v.z_min} plate(s) du sol.`);
+        out.push(`La partie la plus basse flotte à ${v.z_min} plate(s) au-dessus du sol au lieu de reposer dessus.`);
       if (v.n_floating > 0)
-        out.push(`${v.n_floating} pièce(s) n'ont rien en dessous : prévois un support pour les poser.`);
+        out.push(`${v.n_floating} pièce(s) n'ont rien juste en dessous : il faudra les maintenir en place le temps de poser la suite.`);
+      if (v.fill_rate > 0.85)
+        out.push(`Le modèle est rempli à ${Math.round(v.fill_rate * 100)}% : c'est quasiment un bloc plein, et il consommera beaucoup de pièces.`);
       return out;
     },
     libelle(s) { return LIBELLES[s] || s; },

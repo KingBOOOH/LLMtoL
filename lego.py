@@ -88,7 +88,8 @@ def generer(prompt, run_dir, iterations=1, taille=None, avec_notice=True):
             images = {c: os.path.join(d, "render_iso.png") for c, d in piece_models.items()}
             write_bom(result["placements"], iter_dir, result["nom"], piece_images=images)
         write_notice_html(etapes, etape_dirs or [""] * len(etapes),
-                          os.path.join(iter_dir, "notice.html"), result["nom"])
+                          os.path.join(iter_dir, "notice.html"), result["nom"],
+                          rapport=result["report"])
 
     return produits, echecs
 

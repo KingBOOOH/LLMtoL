@@ -167,3 +167,68 @@ def test_ordre_de_montage_tient_aussi_sur_un_gros_modele():
     for etape in etapes:
         assert min(p.z for p in etape) >= z_max_precedent
         z_max_precedent = max(p.z for p in etape)
+
+
+# --- Constructibilite dans la notice (US-03) ---------------------------------------
+
+def _design_toit_plat():
+    """Toit plat au-dessus d'un vide : produit des pieces sans support."""
+    return {"name": "creux", "bbox": [10, 10, 6], "ops": [
+        {"op": "box", "from": [0, 0, 0], "to": [9, 9, 5], "color": "tan"},
+        {"op": "carve", "from": [1, 1, 1], "to": [6, 6, 3]},
+    ]}
+
+
+def test_notice_annonce_un_modele_sain(tmp_path):
+    from src.validator import validate
+
+    # Base large + etage plus etroit : connexe, pose au sol, rien qui flotte, et un
+    # taux de remplissage sous le seuil — un pave plein ferait 100 % et declencherait
+    # a juste titre l'avertissement "quasiment un bloc plein".
+    design = {"name": "gradin", "bbox": [8, 8, 6], "ops": [
+        {"op": "box", "from": [0, 0, 0], "to": [7, 7, 2], "color": "red"},
+        {"op": "box", "from": [2, 2, 3], "to": [5, 5, 5], "color": "blue"},
+    ]}
+    voxels = compile_design(design)
+    p = tile(voxels)
+    rapport = validate(voxels, p, design)
+    etapes = split_steps(p)
+
+    out = tmp_path / "notice.html"
+    write_notice_html(etapes, [""] * len(etapes), str(out), "gradin", rapport=rapport)
+    html = out.read_text(encoding="utf-8")
+    assert "Avant de commencer" in html
+    assert "etat bon" in html, "un modele sain doit le dire, pas afficher un encadre vide"
+
+
+def test_notice_signale_les_etapes_sans_support(tmp_path):
+    from src.validator import validate
+
+    design = _design_toit_plat()
+    voxels = compile_design(design)
+    p = tile(voxels)
+    rapport = validate(voxels, p, design)
+    assert rapport["metrics"]["flottantes"], "le modele de test doit avoir des flottantes"
+
+    etapes = split_steps(p)
+    out = tmp_path / "notice.html"
+    write_notice_html(etapes, [""] * len(etapes), str(out), "creux", rapport=rapport)
+    html = out.read_text(encoding="utf-8")
+
+    assert "etat attention" in html
+    assert "class='alerte'" in html, "l'etape concernee doit etre signalee"
+    # Autant d'alertes que d'etapes contenant au moins une piece sans support.
+    sans_support = {tuple(c) for c in rapport["metrics"]["flottantes"]}
+    attendu = sum(any((q.x, q.y, q.z) in sans_support for q in e) for e in etapes)
+    assert html.count("class='alerte'") == attendu
+
+
+def test_notice_reste_valide_sans_rapport(tmp_path):
+    """L'argument est optionnel : la notice d'avant ne doit pas casser."""
+    p = _placements()
+    etapes = split_steps(p)
+    out = tmp_path / "notice.html"
+    write_notice_html(etapes, [""] * len(etapes), str(out), "pave")
+    html = out.read_text(encoding="utf-8")
+    assert "Avant de commencer" not in html
+    assert "<!doctype html>" in html.lower()

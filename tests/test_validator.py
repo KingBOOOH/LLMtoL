@@ -223,3 +223,83 @@ def test_ground_contact_silent_when_model_sits_on_floor():
     voxels = np.zeros((4, 4, 4), dtype=np.int16)
     voxels[0:2, 0:2, 0:2] = 1
     assert check_ground_contact(voxels) == (0, [])
+
+
+# --- Constructibilite annoncee en francais (US-03) ---------------------------------
+
+def test_resume_modele_sain_ne_dit_rien():
+    from src.validator import resume_constructibilite
+
+    r = resume_constructibilite({"metrics": {"n_components": 1, "z_min": 0,
+                                             "flottantes": [], "fill_rate": 0.4}})
+    assert r["ok"] is True and r["phrases"] == []
+
+
+def test_resume_nomme_chaque_defaut():
+    from src.validator import resume_constructibilite
+
+    r = resume_constructibilite({"metrics": {
+        "n_components": 3, "z_min": 2, "flottantes": [[1, 1, 1], [2, 2, 2]],
+        "fill_rate": 0.92}})
+    assert r["ok"] is False
+    assert len(r["phrases"]) == 4
+    joint = " ".join(r["phrases"])
+    assert "3 morceaux" in joint
+    assert "2 plate(s)" in joint
+    assert "2 piece(s)" in joint
+    assert "92%" in joint
+
+
+def test_resume_sans_vocabulaire_interne():
+    """L'utilisateur ne doit jamais lire 'voxel' ni 'composante connexe'."""
+    from src.validator import resume_constructibilite
+
+    r = resume_constructibilite({"metrics": {
+        "n_components": 2, "z_min": 1, "flottantes": [[0, 0, 1]], "fill_rate": 0.9}})
+    for phrase in r["phrases"]:
+        bas = phrase.lower()
+        for mot in ("voxel", "composante", "connex", "bbox", "iou", "placement"):
+            assert mot not in bas, f"vocabulaire interne dans : {phrase}"
+
+
+def test_resume_tolere_un_rapport_incomplet():
+    from src.validator import resume_constructibilite
+
+    assert resume_constructibilite({})["ok"] is True
+    assert resume_constructibilite({"metrics": {}})["ok"] is True
+
+
+def test_pieces_flottantes_est_coherent_avec_check_floating():
+    """Les deux doivent voir exactement les memes pieces : l'un derive de l'autre."""
+    from src.compiler import compile_design
+    from src.tiler import tile
+    from src.validator import check_floating, pieces_flottantes
+
+    # Toit plat au-dessus d'un vide : le cas qui genere des pieces sans support.
+    design = {"name": "t", "bbox": [10, 10, 6], "ops": [
+        {"op": "box", "from": [0, 0, 0], "to": [9, 9, 5], "color": "tan"},
+        {"op": "carve", "from": [1, 1, 1], "to": [6, 6, 3]},
+    ]}
+    voxels = compile_design(design)
+    placements = tile(voxels)
+    flottantes = pieces_flottantes(placements, voxels)
+    assert flottantes, "le modele de test doit produire des pieces sans support"
+    assert len(check_floating(placements, voxels)) == len(flottantes)
+
+
+def test_metrics_expose_les_coordonnees_des_flottantes():
+    """La notice en a besoin pour nommer les etapes concernees."""
+    from src.compiler import compile_design
+    from src.tiler import tile
+    from src.validator import pieces_flottantes, validate
+
+    design = {"name": "t", "bbox": [10, 10, 6], "ops": [
+        {"op": "box", "from": [0, 0, 0], "to": [9, 9, 5], "color": "tan"},
+        {"op": "carve", "from": [1, 1, 1], "to": [6, 6, 3]},
+    ]}
+    voxels = compile_design(design)
+    placements = tile(voxels)
+    rapport = validate(voxels, placements, design)
+    attendu = {(p.x, p.y, p.z) for p in pieces_flottantes(placements, voxels)}
+    assert attendu, "le modele de test doit produire des pieces sans support"
+    assert {tuple(c) for c in rapport["metrics"]["flottantes"]} == attendu
