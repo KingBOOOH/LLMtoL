@@ -21,6 +21,7 @@ mesure de reference reste figee dans eval/results/.
 
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -135,12 +136,21 @@ def generate_one(prompt_text, iter_dir, log_path, seed=None):
     return etape_dirs, piece_models, etapes, placements, result["report"]
 
 
+# Blender annonce chaque modele du lot par "[k/n] nom" (voir src/blender_script.py).
+# C'est la seule progression reelle disponible pendant la phase la plus longue : on la
+# lit plutot que d'inventer une barre qui avance toute seule.
+_PROGRES_BLENDER = re.compile(r"^\[(\d+)/(\d+)\]")
+
+
 def render_all(work_dirs, run_dir, assemble_dirs=None, env_extra=None,
-               manifest_name="_manifest.txt"):
+               manifest_name="_manifest.txt", on_progress=None):
     """Rend tous les modeles en un seul processus Blender, puis assemble les planches.
 
     assemble_dirs : sous-ensemble pour lequel produire la planche 2x2. Les etapes de
     notice n'ont besoin que de leur rendu isometrique, pas d'une planche complete.
+
+    on_progress(fait, total) : appele a chaque modele rendu. Sans lui, la sortie de
+    Blender est simplement relayee comme avant.
     """
     if not work_dirs:
         print("Aucun modele a rendre.")
@@ -170,6 +180,30 @@ def render_all(work_dirs, run_dir, assemble_dirs=None, env_extra=None,
                           capture_output=True).returncode == 0:
             assembled += 1
     print(f"Planches assemblees : {assembled}")
+
+
+def _rendre_en_suivant(env, on_progress):
+    """Lance Blender en lisant sa sortie ligne a ligne pour suivre l'avancement.
+
+    Separe de render_all pour que le cas sans suivi reste un simple subprocess.run :
+    lire un flux ligne a ligne ouvre des cas d'erreur (encodage, blocage) qu'on ne
+    veut pas imposer aux appelants qui n'en ont pas besoin.
+    """
+    proc = subprocess.Popen(
+        [config.BLENDER_EXE, "--background", "--python", BLENDER_SCRIPT],
+        env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, encoding="utf-8", errors="replace", bufsize=1)
+    for ligne in proc.stdout:
+        print(ligne, end="")
+        m = _PROGRES_BLENDER.match(ligne)
+        if m:
+            try:
+                on_progress(int(m.group(1)), int(m.group(2)))
+            except Exception as e:
+                # Un rapport d'avancement casse ne doit jamais interrompre un rendu
+                # de plusieurs minutes deja engage.
+                print(f"(suivi d'avancement ignore : {e})")
+    proc.wait()
 
 
 def main():

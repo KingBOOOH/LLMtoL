@@ -177,6 +177,15 @@ Docker                            Hôte Windows
   outputs/ monté en lecture seule       blender.exe
 ```
 
+L'interface affiche une **barre de progression alimentée par des chiffres réels** :
+`design 2/4`, `rendu des étapes 38/46`. La progression du rendu — la phase la plus
+longue — est lue dans la sortie de Blender, qui annonce déjà chaque modèle du lot. Quand
+une étape n'a pas de sous-progression mesurable (planification, écriture de la notice),
+la barre passe en mode indéterminé plutôt que d'afficher un pourcentage inventé.
+
+L'agent traite **un job à la fois**, le plus ancien d'abord. Un job en file indique
+combien de générations passent avant lui, au lieu de laisser croire à un blocage.
+
 Un job interrompu pendant la production des variantes **repart de zéro** : celles déjà
 produites sont incomplètes, et surtout leurs indices rejoueraient à l'identique, ce qui
 violerait la contrainte d'unicité et ferait échouer le job au lieu de le reprendre. En
@@ -459,7 +468,7 @@ python -m tools.recover_eval eval/results/_work/v1 v1_recovered
 python -m pytest tests/ -q
 ```
 
-132 tests, couvrant le schéma DSL, le compilateur, le pavage, le validateur, les
+136 tests, couvrant le schéma DSL, le compilateur, le pavage, le validateur, les
 primitives, la nomenclature, le découpage en étapes, la notice PDF et la
 détection du piège LM Studio.
 Deux d'entre eux valent d'être signalés : l'un verrouille le fait que le DSL exprime

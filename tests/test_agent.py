@@ -189,3 +189,68 @@ def test_aucun_job_abandonne():
     agent = _agent()
     session = _SessionReprise([])
     assert agent.reprendre_les_abandonnes(session, limite="peu importe") == 0
+
+
+# --- Suivi d'avancement du rendu ---------------------------------------------------
+
+def test_progression_blender_reconnue():
+    """Blender annonce "[k/n] nom" : c'est la seule progression reelle de la phase
+    la plus longue. Si ce format change, la barre se fige sans rien dire."""
+    import pipeline
+
+    for ligne, attendu in (
+        ("[1/49] etape_001\n", (1, 49)),
+        ("[38/46] 3020_c4\n", (38, 46)),
+        ("[7/7] pieces\n", (7, 7)),
+    ):
+        m = pipeline._PROGRES_BLENDER.match(ligne)
+        assert m, f"non reconnu : {ligne!r}"
+        assert (int(m.group(1)), int(m.group(2))) == attendu
+
+
+def test_lignes_non_progression_ignorees():
+    """Blender et l'add-on crachent des centaines de lignes : aucune ne doit etre
+    prise pour un avancement."""
+    import pipeline
+
+    for ligne in ("Info: [importldraw] Loading files\n",
+                  "Moteur : CYCLES, resolution : 800x800\n",
+                  "Saved: 'render_iso.png'\n",
+                  "  [pas en debut de ligne]\n",
+                  "[abc/def]\n"):
+        assert pipeline._PROGRES_BLENDER.match(ligne) is None, f"faux positif : {ligne!r}"
+
+
+def test_le_format_de_progression_de_blender_n_a_pas_change():
+    """Verrouille le contrat entre blender_script.py et le lecteur de pipeline.py.
+
+    Les deux vivent dans des processus differents : rien d'autre ne relierait un
+    changement de format a la barre de progression qui cesserait de bouger.
+    """
+    import os
+    import re
+
+    import pipeline
+
+    source = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                               "src", "blender_script.py"), encoding="utf-8").read()
+    emission = re.search(r'print\(f"\[\{i\}/\{len\(work_dirs\)\}\][^"]*"', source)
+    assert emission, "blender_script.py n'emet plus '[k/n] ...' en debut de ligne"
+    # Et le lecteur sait bien lire ce que l'emetteur produit.
+    assert pipeline._PROGRES_BLENDER.match("[3/12] quelque_chose")
+
+
+def test_au_demarrage_tout_job_en_cours_est_repris():
+    """Un agent qui demarre ne peut avoir aucun job legitimement en vol.
+
+    Sans ca, relancer l'agent laissait son ancien job bloque REPRISE_APRES_S
+    (30 min) et l'interface affichait deux generations en cours simultanement.
+    """
+    import re
+
+    import agent as agent_mod
+
+    source = open(agent_mod.__file__, encoding="utf-8").read()
+    corps = source[source.index("def main("):]
+    assert re.search(r"reprendre_les_abandonnes\(session,\s*limite=demarrage\)", corps), \
+        "main() doit reprendre sans attendre le delai de peremption"

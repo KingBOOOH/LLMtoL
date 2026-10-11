@@ -81,6 +81,25 @@
   .bandeau.alerte { background: #3a2f16; border-color: #6b5520; color: #f2d79a; }
   .bandeau.erreur { background: #3a1f1d; border-color: #7a3630; color: #f2b3ae; }
 
+  .barre {
+    height: 8px; background: var(--fond); border: 1px solid var(--bord);
+    border-radius: 999px; overflow: hidden; margin: 10px 0 6px;
+  }
+  .barre > i { display: block; height: 100%; background: var(--accent);
+               transition: width .4s ease; }
+  /* Rayures animees : signale une etape EN COURS dont on ne connait pas
+     l'avancement chiffre, au lieu de faire semblant avec un pourcentage. */
+  .barre.indetermine > i {
+    width: 100%; opacity: .35;
+    background: repeating-linear-gradient(90deg, var(--accent) 0 14px,
+                                          transparent 14px 28px);
+    animation: defile 1s linear infinite;
+  }
+  @keyframes defile { to { background-position: 28px 0; } }
+  .progres { display: flex; justify-content: space-between; gap: 12px;
+             font-size: 13px; color: var(--doux); }
+  .progres b { color: var(--texte); font-weight: 600; }
+
   .grille {
     display: grid; gap: 16px;
     grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));
@@ -200,10 +219,18 @@
     <h2>
       {{ actif.status === 'a_choisir' ? 'Choisis ta variante' : 'Génération en cours' }}
     </h2>
-    <p class="sous" style="margin-bottom:16px">
-      {{ actif.prompt }}
-      <template v-if="actif.etape"> &mdash; {{ actif.etape }}</template>
-    </p>
+    <p class="sous" style="margin-bottom:4px">{{ actif.prompt }}</p>
+
+    <div v-if="actif.status !== 'a_choisir'" style="margin-bottom:18px">
+      <div class="barre" :class="{ indetermine: pourcent(actif) === null }">
+        <i v-if="pourcent(actif) !== null" :style="{ width: pourcent(actif) + '%' }"></i>
+        <i v-else></i>
+      </div>
+      <div class="progres">
+        <span>{{ libelleAvancement(actif) }}</span>
+        <span v-if="pourcent(actif) !== null"><b>{{ pourcent(actif) }}%</b></span>
+      </div>
+    </div>
 
     <div v-if="actif.variantes.length" class="grille">
       <div v-for="v in actif.variantes" :key="v.id"
@@ -305,8 +332,15 @@ Vue.createApp({
   },
   computed: {
     // Le job en cours est le plus recent qui n'est ni termine ni en echec.
+    // Priorite a ce qui attend l'utilisateur, puis a ce qui travaille vraiment, et
+    // seulement ensuite a ce qui patiente. Sans cet ordre, un job en file masquait
+    // celui que l'agent etait en train de traiter, et l'interface semblait figee.
     actif() {
-      return this.jobs.find(j => EN_COURS.includes(j.status)) || null;
+      const enCours = ["en_cours", "en_finition"];
+      return this.jobs.find(j => j.status === "a_choisir")
+          || this.jobs.find(j => enCours.includes(j.status))
+          || this.jobs.find(j => j.status === "en_attente")
+          || null;
     },
   },
   methods: {
@@ -373,6 +407,31 @@ Vue.createApp({
     // "en preparation" ne doit s'afficher que si quelque chose se prepare vraiment :
     // sur un job termine sans PDF, ce serait une attente qui ne finit jamais.
     enCours(j) { return EN_COURS.includes(j.status); },
+
+    // null = avancement inconnu : l'interface montre une barre indeterminee plutot
+    // qu'un pourcentage invente.
+    pourcent(j) {
+      if (!j.etape_total) return null;
+      return Math.min(100, Math.round((j.etape_fait / j.etape_total) * 100));
+    },
+
+    // Nombre de jobs que l'agent traitera avant celui-ci.
+    placeDansLaFile(j) {
+      return this.jobs.filter(
+        a => a.created_at < j.created_at
+          && ["en_attente", "en_cours", "en_finition"].includes(a.status)).length;
+    },
+
+    libelleAvancement(j) {
+      if (j.status === "en_attente") {
+        const devant = this.placeDansLaFile(j);
+        if (!devant) return "en attente de l'agent";
+        return `en attente — ${devant} génération(s) avant celle-ci`;
+      }
+      const etape = j.etape || "en cours";
+      if (j.etape_total) return `${etape} — ${j.etape_fait} / ${j.etape_total}`;
+      return etape;
+    },
     avertissements(j) {
       // Traduit les metriques du validateur en phrases lisibles. Le calcul est deja
       // fait cote Python, ici on ne fait que le dire en francais.
