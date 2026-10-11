@@ -150,8 +150,8 @@ comparer des générations entre elles.
 | `LEGO_RENDER_RES` | `800` | résolution en pixels |
 | `LEGO_RENDER_MARGIN` | `1.15` | marge autour du modèle (1.15 = 87 % du cadre) |
 | `LEGO_RENDER_VIEWS` | les 4 | vues à rendre, ex. `iso` seule |
-| `LEGO_PIECES_PAR_ETAPE` | `8` | pièces par étape de notice |
-| `LEGO_NOTICE_MAX_ETAPES` | `40` | au-delà, les étapes ne sont pas rendues |
+| `LEGO_PIECES_PAR_ETAPE` | `8` | pièces par étape ; **si tu la fixes, le regroupement automatique est désactivé** |
+| `LEGO_NOTICE_MAX_ETAPES` | `40` | plafond du nombre d'étapes (voir *La notice*) |
 
 **Choix du moteur, mesuré.** EEVEE est écarté : il rend les pièces en aplat uniforme, les
 groupes de nœuds de l'add-on datant de Blender 2.81. Workbench est rapide et détaillé mais
@@ -244,6 +244,37 @@ Opérations : `box`, `carve`, `column`, `layer` (grille ASCII), `cylinder`, `sph
 
 Le schéma JSON est le principal outil d'alignement : bien borné, il rend le modèle
 *incapable* d'émettre une coordonnée aberrante ou une couleur hors palette.
+
+### La notice
+
+Le modèle est découpé en étapes d'un **nombre fixe de pièces**, dans l'ordre de montage
+réel (z croissant : on ne pose pas une pièce sous une pièce déjà posée). Découper par
+couche donnait des étapes très inégales — une couche peut contenir une pièce comme
+cinquante — et on perdait le fil.
+
+Sur un gros modèle, le nombre de pièces par étape **augmente automatiquement** pour que
+le total d'étapes reste sous `LEGO_NOTICE_MAX_ETAPES`. Auparavant, au-delà de 320 pièces
+les rendus d'étapes étaient purement sautés : un modèle de 1267 pièces donnait 159 étapes
+et une notice **sans la moindre image**, donc inutilisable. Mieux vaut des étapes plus
+chargées qu'une notice vide.
+
+En dessous du seuil, rien ne change. Et si tu fixes `LEGO_PIECES_PAR_ETAPE`, ton choix
+prime : l'adaptation est désactivée.
+
+**Mesuré** sur un pavé creux de 476 pièces, chaîne déterministe seule (aucun appel LLM) :
+
+| | |
+|---|---|
+| étapes | **40** — exactement le plafond, contre 60 sans images auparavant |
+| pièces par étape | 12, relevé de 8 automatiquement |
+| images d'étapes produites | **40 / 40, aucune manquante** |
+| vignettes de pièces | 9 (une par référence et couleur, pas une par étape) |
+| découpage | 0,1 s |
+| rendu des 49 images | 357 s, en **un seul** processus Blender |
+
+Les 357 s sont le vrai coût d'une notice de gros modèle. Ils se règlent par
+`LEGO_NOTICE_MAX_ETAPES` : baisser le plafond réduit proportionnellement le nombre de
+rendus.
 
 ### La taille demandée
 
@@ -406,7 +437,7 @@ le tableau du projet. Résumé :
 | #13 | taille du modèle bornée par le schéma | fait |
 | #2 | mesure figée du jeu primitives | en cours — 3 formes sur 9 rejouées depuis la correction du `z` |
 | #9 | agent de génération | en cours — la plomberie est testée, **aucun modèle n'a encore été généré via la pile web** |
-| #5 | notice utilisable quelle que soit la taille | à faire |
+| #5 | notice utilisable quelle que soit la taille | fait |
 | #6 | constructibilité annoncée en français | à faire |
 | #12 | notice PDF | à faire |
 

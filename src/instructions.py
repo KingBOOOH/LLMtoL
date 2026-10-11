@@ -8,9 +8,10 @@ cette machine, et l'evaluer supposerait d'ajouter une dependance externe lourde 
 besoin que la machinerie existante couvre deja — on sait deja ecrire un .ldr et rendre un
 lot en un seul processus Blender.
 
-Decoupage : par couche z croissante, car c'est l'ordre de montage reel (on ne pose pas une
-piece sous une piece deja posee). Les couches trop maigres sont fusionnees et les couches
-trop denses scindees, pour viser un nombre de pieces lisible par etape.
+Decoupage : nombre FIXE de pieces par etape, dans l'ordre de montage reel (z croissant :
+on ne pose pas une piece sous une piece deja posee). Sur les gros modeles ce nombre
+augmente automatiquement pour que le total d'etapes reste borne — rendre une image par
+etape coute un passage Blender, et une notice de 159 etapes est de toute facon illisible.
 """
 
 import math
@@ -21,20 +22,46 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.ldraw_writer import write_ldr
 
 PIECES_PAR_ETAPE = int(os.environ.get("LEGO_PIECES_PAR_ETAPE", "8"))
+# Si l'utilisateur fixe la variable, son choix prime et le regroupement automatique est
+# desactive : on ne discute pas une consigne explicite.
+PIECES_PAR_ETAPE_IMPOSE = "LEGO_PIECES_PAR_ETAPE" in os.environ
+
+# Plafond du nombre d'etapes. Vit ici, la ou le decoupage se decide, et non dans
+# pipeline.py qui ne fait que consommer le resultat.
+NOTICE_MAX_ETAPES = int(os.environ.get("LEGO_NOTICE_MAX_ETAPES", "40"))
 
 
-def split_steps(placements, pieces_par_etape=None):
-    """Repartit les placements en etapes d'un nombre FIXE de pieces.
+def pieces_par_etape_pour(n_pieces, max_etapes=None):
+    """Combien de pieces par etape pour que le total d'etapes reste sous le plafond.
+
+    En dessous du seuil (8 x 40 = 320 pieces), renvoie PIECES_PAR_ETAPE : le
+    comportement des petits modeles ne bouge pas. Au-dela, le nombre grossit juste ce
+    qu'il faut. Un choix explicite via LEGO_PIECES_PAR_ETAPE desactive l'adaptation.
+    """
+    plafond = max_etapes or NOTICE_MAX_ETAPES
+    if PIECES_PAR_ETAPE_IMPOSE:
+        return PIECES_PAR_ETAPE
+    return max(PIECES_PAR_ETAPE, math.ceil(n_pieces / plafond))
+
+
+def split_steps(placements, pieces_par_etape=None, max_etapes=None):
+    """Repartit les placements en etapes d'un nombre fixe de pieces.
 
     Decoupage par quantite et non par couche z : une couche peut contenir une seule
     piece comme cinquante, ce qui donnait des etapes tres inegales et faisait perdre
     le fil. A nombre constant, chaque etape demande le meme effort.
 
+    Sur un gros modele le nombre de pieces par etape augmente automatiquement, pour que
+    le total d'etapes reste sous NOTICE_MAX_ETAPES. Avant, au-dela de 320 pieces les
+    rendus d'etapes etaient purement SAUTES : un chateau de 1267 pieces donnait 159
+    etapes et une notice sans la moindre image, donc inutilisable. Mieux vaut des
+    etapes plus chargees qu'une notice vide.
+
     L'ordre de montage reste physiquement valide : les placements sont tries par z
     croissant d'abord (on ne pose pas une piece sous une piece deja posee), puis par
     position dans la couche pour que la progression soit lisible d'une etape a l'autre.
     """
-    taille = pieces_par_etape or PIECES_PAR_ETAPE
+    taille = pieces_par_etape or pieces_par_etape_pour(len(placements), max_etapes)
     ordonnes = sorted(placements, key=lambda p: (p.z, p.y, p.x))
     return [ordonnes[i:i + taille] for i in range(0, len(ordonnes), taille)]
 

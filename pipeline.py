@@ -40,11 +40,6 @@ from src.ldraw_writer import write_ldr
 from src.llm_client import LLMCallError
 from src.planner import plan as make_plan
 
-# Au-dela, la notice couterait un rendu Blender par etape pour un resultat illisible
-# (un chateau de 1267 pieces donne 119 etapes). Les etapes sont alors ecrites mais pas
-# rendues : la notice reste consultable, sans images.
-NOTICE_MAX_ETAPES = int(os.environ.get("LEGO_NOTICE_MAX_ETAPES", "40"))
-
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SRC_DIR = os.path.join(BASE_DIR, "src")
 OUTPUTS_DIR = os.path.join(BASE_DIR, "outputs")
@@ -104,9 +99,9 @@ def generer_modele(prompt_text, iter_dir, log_path, seed=None, taille=None,
 def preparer_notice(placements, iter_dir, nom, log_path):
     """Ecrit la nomenclature et les sous-modeles d'etapes, prets a etre rendus.
 
-    Retourne (dossiers_etapes, vignettes_de_pieces, etapes). Au-dela de
-    NOTICE_MAX_ETAPES, les etapes sont ecrites mais leurs rendus sautes : les
-    dossiers retournes sont vides pour que l'appelant n'en demande aucun.
+    Retourne (dossiers_etapes, vignettes_de_pieces, etapes). Le nombre d'etapes est
+    borne par src.instructions (regroupement adaptatif), donc ce lot de rendus reste
+    de taille previsible quelle que soit la taille du modele.
     """
     rows = write_bom(placements, iter_dir, nom)
     log_line(log_path,
@@ -115,12 +110,6 @@ def preparer_notice(placements, iter_dir, nom, log_path):
 
     steps_dir = os.path.join(iter_dir, "etapes")
     etape_dirs, etapes = write_step_models(placements, steps_dir, nom)
-
-    if len(etapes) > NOTICE_MAX_ETAPES:
-        log_line(log_path,
-                 f"Notice : {len(etapes)} etapes ecrites, rendus SAUTES "
-                 f"(> {NOTICE_MAX_ETAPES})")
-        return [], {}, etapes
 
     # Une piece par (reference, couleur) pour l'encart, rendue une seule fois meme si
     # elle revient dans plusieurs etapes.

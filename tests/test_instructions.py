@@ -110,3 +110,60 @@ def test_total_pieces_coherent_entre_etapes_et_nomenclature():
     etapes = split_steps(p)
     assert sum(len(e) for e in etapes) == len(p)
     assert sum(r["quantite"] for r in build_bom(p)) == len(p)
+
+
+# --- Regroupement adaptatif (US-02) -----------------------------------------------
+
+def test_petits_modeles_inchanges():
+    """En dessous du seuil, le comportement historique ne doit pas bouger."""
+    from src.instructions import NOTICE_MAX_ETAPES, PIECES_PAR_ETAPE, pieces_par_etape_pour
+
+    seuil = PIECES_PAR_ETAPE * NOTICE_MAX_ETAPES
+    for n in (1, 8, 50, 319, seuil):
+        assert pieces_par_etape_pour(n) == PIECES_PAR_ETAPE, f"{n} pieces"
+
+
+def test_gros_modele_reste_sous_le_plafond():
+    """Le cas qui motivait US-02 : 1267 pieces donnaient 159 etapes sans images."""
+    from src.instructions import NOTICE_MAX_ETAPES, pieces_par_etape_pour
+
+    for n in (321, 1267, 5000, 50000):
+        taille = pieces_par_etape_pour(n)
+        n_etapes = -(-n // taille)  # division entiere arrondie au-dessus
+        assert n_etapes <= NOTICE_MAX_ETAPES, f"{n} pieces -> {n_etapes} etapes"
+
+
+def test_split_steps_respecte_le_plafond_sur_un_gros_modele():
+    from src.instructions import NOTICE_MAX_ETAPES
+
+    gros = _placements(bbox=(40, 40, 24))
+    assert len(gros) > 320, f"le modele de test doit depasser le seuil ({len(gros)})"
+    etapes = split_steps(gros)
+    assert len(etapes) <= NOTICE_MAX_ETAPES
+    assert sum(len(e) for e in etapes) == len(gros), "aucune piece perdue"
+
+
+def test_choix_explicite_desactive_adaptation():
+    """LEGO_PIECES_PAR_ETAPE est une consigne de l'utilisateur, on ne la discute pas."""
+    import importlib
+
+    import src.instructions as instr
+
+    os.environ["LEGO_PIECES_PAR_ETAPE"] = "5"
+    try:
+        importlib.reload(instr)
+        assert instr.PIECES_PAR_ETAPE_IMPOSE is True
+        assert instr.pieces_par_etape_pour(100000) == 5, "l'adaptation doit etre ignoree"
+    finally:
+        del os.environ["LEGO_PIECES_PAR_ETAPE"]
+        importlib.reload(instr)
+    assert instr.PIECES_PAR_ETAPE_IMPOSE is False
+
+
+def test_ordre_de_montage_tient_aussi_sur_un_gros_modele():
+    """La propriete physique ne doit pas se perdre quand les etapes grossissent."""
+    etapes = split_steps(_placements(bbox=(40, 40, 24)))
+    z_max_precedent = -1
+    for etape in etapes:
+        assert min(p.z for p in etape) >= z_max_precedent
+        z_max_precedent = max(p.z for p in etape)
