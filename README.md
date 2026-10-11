@@ -177,6 +177,12 @@ Docker                            Hôte Windows
   outputs/ monté en lecture seule       blender.exe
 ```
 
+Un job interrompu pendant la production des variantes **repart de zéro** : celles déjà
+produites sont incomplètes, et surtout leurs indices rejoueraient à l'identique, ce qui
+violerait la contrainte d'unicité et ferait échouer le job au lieu de le reprendre. En
+revanche, si l'utilisateur avait déjà choisi, son choix est conservé et seule la phase
+notice est rejouée.
+
 L'agent émet son signe de vie depuis un **thread dédié**, et non depuis sa boucle
 principale : celle-ci est bloquée plusieurs minutes pendant un rendu Blender, et l'API
 déclarait alors l'agent mort au moment précis où il travaillait le plus (mesuré :
@@ -453,7 +459,7 @@ python -m tools.recover_eval eval/results/_work/v1 v1_recovered
 python -m pytest tests/ -q
 ```
 
-129 tests, couvrant le schéma DSL, le compilateur, le pavage, le validateur, les
+132 tests, couvrant le schéma DSL, le compilateur, le pavage, le validateur, les
 primitives, la nomenclature, le découpage en étapes, la notice PDF et la
 détection du piège LM Studio.
 Deux d'entre eux valent d'être signalés : l'un verrouille le fait que le DSL exprime

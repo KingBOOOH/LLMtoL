@@ -33,7 +33,7 @@ from datetime import datetime, timedelta, timezone
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-from sqlalchemy import select, text, update
+from sqlalchemy import select, text
 
 import config
 import pipeline
@@ -142,20 +142,43 @@ def prendre_une_finition(session):
     return session.get(Job, ligne[0]) if ligne else None
 
 
-def reprendre_les_abandonnes(session):
+def reprendre_les_abandonnes(session, limite=None):
     """Remet en file les jobs laisses en_cours par un agent tue.
 
     C'est la reponse automatique au tueur de taches par pression memoire : au lieu de
     perdre le travail, le job repart. Un job deja passe a_choisir n'est pas touche.
+
+    Deux cas, qui ne se reprennent PAS de la meme facon :
+
+    - une variante est deja retenue : l'interruption a eu lieu en phase 2 (notice,
+      PDF). La variante retenue est intacte, le job repart en `en_finition`.
+    - aucune variante retenue : l'interruption a eu lieu pendant la production des
+      variantes. Celles deja produites sont incompletes (leurs rendus ont pu etre
+      interrompus) et surtout leurs indices rejoueraient a l'identique : l'insertion
+      violerait UNIQUE(job_id, indice) et le job echouerait au lieu de reprendre.
+      On repart donc proprement de zero.
+
+    Retourne le nombre de jobs repris.
     """
-    limite = datetime.now(timezone.utc) - timedelta(seconds=REPRISE_APRES_S)
-    n = session.execute(
-        update(Job).where(Job.status == "en_cours", Job.claimed_at < limite)
-        .values(status="en_attente", claimed_at=None,
-                etape="reprise apres interruption")).rowcount
+    limite = limite or (datetime.now(timezone.utc) - timedelta(seconds=REPRISE_APRES_S))
+    abandonnes = session.scalars(
+        select(Job).where(Job.status == "en_cours", Job.claimed_at < limite)).all()
+
+    for job in abandonnes:
+        if any(v.is_chosen for v in job.variantes):
+            job.status = "en_finition"
+        else:
+            for v in list(job.variantes):
+                session.delete(v)
+            job.status = "en_attente"
+        job.claimed_at = None
+        job.etape = "reprise apres interruption"
+        session.add(job)
+
     session.commit()
-    if n:
-        log(f"{n} job(s) abandonne(s) remis en file")
+    if abandonnes:
+        log(f"{len(abandonnes)} job(s) abandonne(s) repris")
+    return len(abandonnes)
 
 
 def _etat(session, job, etape):

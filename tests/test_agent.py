@@ -118,3 +118,74 @@ def test_le_delai_api_laisse_de_la_marge():
     sinon un hoquet reseau suffirait a declarer l'agent mort."""
     agent = _agent()
     assert agent.AGENT_TIMEOUT_S >= 10 * agent.INTERVALLE_S
+
+
+# --- Reprise d'un job abandonne --------------------------------------------------
+
+class _VarianteFactice:
+    def __init__(self, indice, is_chosen=False):
+        self.indice = indice
+        self.is_chosen = is_chosen
+
+
+class _JobFactice:
+    def __init__(self, variantes, status="en_cours"):
+        self.variantes = variantes
+        self.status = status
+        self.claimed_at = "ancien"
+        self.etape = None
+
+
+class _SessionReprise:
+    """Session factice : on observe les suppressions et le commit, rien d'autre."""
+
+    def __init__(self, jobs):
+        self._jobs = jobs
+        self.supprimes = []
+        self.commits = 0
+
+    def scalars(self, _requete):
+        return self
+
+    def all(self):
+        return self._jobs
+
+    def delete(self, obj):
+        self.supprimes.append(obj)
+
+    def add(self, _obj):
+        pass
+
+    def commit(self):
+        self.commits += 1
+
+
+def test_reprise_phase_1_repart_de_zero():
+    """Les variantes partielles rejoueraient les memes indices et violeraient
+    UNIQUE(job_id, indice) : le job echouerait au lieu de reprendre."""
+    agent = _agent()
+    job = _JobFactice([_VarianteFactice(1), _VarianteFactice(2)])
+    session = _SessionReprise([job])
+
+    assert agent.reprendre_les_abandonnes(session, limite="peu importe") == 1
+    assert job.status == "en_attente"
+    assert len(session.supprimes) == 2, "les variantes partielles doivent etre effacees"
+    assert job.claimed_at is None
+
+
+def test_reprise_phase_2_conserve_la_variante_retenue():
+    """Interrompu pendant la notice : le choix de l'utilisateur ne doit pas etre perdu."""
+    agent = _agent()
+    retenue = _VarianteFactice(2, is_chosen=True)
+    job = _JobFactice([_VarianteFactice(1), retenue])
+    session = _SessionReprise([job])
+
+    agent.reprendre_les_abandonnes(session, limite="peu importe")
+    assert job.status == "en_finition"
+    assert session.supprimes == [], "rien ne doit etre efface apres le choix"
+
+
+def test_aucun_job_abandonne():
+    agent = _agent()
+    session = _SessionReprise([])
+    assert agent.reprendre_les_abandonnes(session, limite="peu importe") == 0
