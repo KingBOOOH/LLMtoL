@@ -66,7 +66,8 @@ def log_line(log_path, msg):
         f.write(line + "\n")
 
 
-def generer_modele(prompt_text, iter_dir, log_path, seed=None):
+def generer_modele(prompt_text, iter_dir, log_path, seed=None, taille=None,
+                   bbox_max=None):
     """Produit plan.md, design.json, report.json et model.ldr. Rien de plus.
 
     Separe de la preparation de notice parce que les deux n'ont pas le meme cout :
@@ -78,12 +79,14 @@ def generer_modele(prompt_text, iter_dir, log_path, seed=None):
     """
     log_line(log_path, "Planification...")
     t0 = time.time()
-    plan_text = make_plan(prompt_text, iter_dir, seed=seed)
+    plan_text = make_plan(prompt_text, iter_dir, seed=seed, taille=taille,
+                          bbox_max=bbox_max)
     log_line(log_path, f"Plan obtenu ({time.time() - t0:.1f}s)")
 
     log_line(log_path, "Design contraint par le DSL...")
     t1 = time.time()
-    result = make_design(prompt_text, plan_text, iter_dir, seed=seed)
+    result = make_design(prompt_text, plan_text, iter_dir, seed=seed, taille=taille,
+                         bbox_max=bbox_max)
     report = result["report"]
     log_line(log_path,
              f"Design valide ({time.time() - t1:.1f}s) — score {report['score']}, "

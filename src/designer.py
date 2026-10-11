@@ -14,7 +14,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.compiler import compile_design
-from src.dsl_schema import SCHEMA, validate_design
+from src.dsl_schema import build_schema, resoudre_bornes, validate_design
 from src.llm_client import LLMCallError, call_llm
 from src.tiler import tile
 from src.validator import validate
@@ -86,14 +86,21 @@ def _format_repair_message(errors, warnings):
     return "\n".join(lines)
 
 
-def design(user_prompt, plan_text, work_dir, seed=None):
+def design(user_prompt, plan_text, work_dir, seed=None, taille=None, bbox_max=None):
     """Genere un design DSL, le compile, le pave, le valide ; repare jusqu'a
     MAX_REPAIRS fois sur echec (JSON/schema invalide ou erreurs bloquantes du
     validateur). Retourne {"design", "voxels", "placements", "report", "repairs_used"}.
 
+    taille / bbox_max resserrent les bornes du schema envoye au modele. C'est une
+    garantie et non une consigne : le decodage contraint rend le modele INCAPABLE
+    d'emettre une coordonnee hors bornes. La borne appliquee est consignee dans
+    report.json pour que le resultat reste rejouable.
+
     Leve LLMCallError (reseau, gere par call_llm) ou RuntimeError (echec apres
     reparations, error.txt ecrit dans work_dir) sinon.
     """
+    bornes = resoudre_bornes(taille, bbox_max)
+    schema = build_schema(bornes)
     user_message = f"{user_prompt}\n\nPlan :\n{plan_text}"
     extra_messages = list(_FEWSHOT_MESSAGES)
     last_report = None
@@ -102,13 +109,13 @@ def design(user_prompt, plan_text, work_dir, seed=None):
         tag = "designer" if attempt == 0 else f"designer_repair{attempt}"
 
         content, _metadata = call_llm(
-            SYSTEM_PROMPT, user_message, schema=SCHEMA, temperature=0.3, top_p=0.9,
+            SYSTEM_PROMPT, user_message, schema=schema, temperature=0.3, top_p=0.9,
             seed=seed, log_dir=work_dir, tag=tag, extra_messages=extra_messages,
         )
 
         try:
             parsed = json.loads(_extract_json(content))
-            validate_design(parsed)
+            validate_design(parsed, schema)
         except Exception as e:
             last_report = {"score": 0.0, "errors": [f"JSON/schema invalide : {e}"], "warnings": [], "metrics": {}}
             extra_messages = extra_messages + [
@@ -123,6 +130,10 @@ def design(user_prompt, plan_text, work_dir, seed=None):
         last_report = report
 
         if not report["errors"]:
+            # Rejouabilite : sans cette trace, impossible de savoir plus tard a quelle
+            # echelle le modele a ete contraint.
+            report["bbox_max_applique"] = bornes
+            report["taille_demandee"] = taille
             with open(os.path.join(work_dir, "design.json"), "w", encoding="utf-8") as f:
                 json.dump(parsed, f, indent=2)
             with open(os.path.join(work_dir, "report.json"), "w", encoding="utf-8") as f:
