@@ -24,6 +24,7 @@ reviendrait a en jeter les trois quarts.
 import os
 import socket
 import subprocess
+import threading
 import sys
 import time
 import traceback
@@ -82,6 +83,37 @@ def signaler(session):
     session.commit()
 
 
+def boucle_signe_de_vie(arret, intervalle=None, session_factory=None, beat=None):
+    """Signale la presence de l'agent en continu, dans un THREAD separe.
+
+    Indispensable : le signal etait emis par la boucle principale, qui est bloquee
+    pendant un rendu Blender de plusieurs minutes. L'API declarait alors l'agent mort
+    alors qu'il travaillait, et l'interface affichait "aucun agent actif" en plein
+    travail. Mesure du defaut : 3 min 05 sans signal pendant un rendu d'etapes, pour
+    un delai cote API de 90 s.
+
+    session_factory / beat sont injectables pour les tests : la boucle est testable
+    sans base ni thread reel.
+    """
+    pause = intervalle or INTERVALLE_S
+    fabrique = session_factory or Session
+    emettre = beat or signaler
+    with fabrique() as session:
+        while True:
+            try:
+                emettre(session)
+            except Exception as e:
+                # Une base momentanement injoignable ne doit pas tuer le thread :
+                # l'agent continuerait a travailler en paraissant mort pour toujours.
+                log(f"signe de vie impossible : {e}")
+                try:
+                    session.rollback()
+                except Exception:
+                    pass
+            if arret.wait(pause):
+                return
+
+
 def prendre_un_job(session):
     """Prend atomiquement le job en attente le plus ancien, ou None.
 
@@ -131,7 +163,6 @@ def _etat(session, job, etape):
     job.etape = etape
     session.add(job)
     session.commit()
-    signaler(session)
 
 
 def produire_variantes(session, job):
@@ -327,17 +358,21 @@ def main():
             raise SystemExit("\nAgent non demarre. Corrige le point ci-dessus, ou "
                              "--skip-env-check pour forcer.")
 
+    arret = threading.Event()
+    # Thread dedie : le signe de vie doit continuer pendant un rendu Blender, qui
+    # bloque la boucle principale plusieurs minutes.
+    threading.Thread(target=boucle_signe_de_vie, args=(arret,), daemon=True).start()
+
     with Session() as session:
         reprendre_les_abandonnes(session)
-        signaler(session)
-        log(f"en attente de jobs (signe de vie toutes les {INTERVALLE_S}s, "
-            f"delai cote API {AGENT_TIMEOUT_S}s)")
+        log(f"en attente de jobs (signe de vie toutes les {INTERVALLE_S}s dans un "
+            f"thread dedie, delai cote API {AGENT_TIMEOUT_S}s)")
         while True:
             try:
-                signaler(session)
                 occupe = traiter_un(session)
             except KeyboardInterrupt:
                 log("arret demande")
+                arret.set()
                 return
             except Exception as e:
                 # La boucle ne doit jamais mourir sur une base momentanement absente.
@@ -345,6 +380,7 @@ def main():
                 session.rollback()
                 occupe = False
             if une_fois:
+                arret.set()
                 return
             if not occupe:
                 time.sleep(INTERVALLE_S)
