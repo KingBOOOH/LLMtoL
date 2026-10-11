@@ -78,6 +78,14 @@ pip install -r requirements.txt
 
 ## La pipeline
 
+Trois points d'entrée, **une seule chaîne** derrière :
+
+| | Pour quoi |
+|---|---|
+| `python lego.py "<prompt>"` | un modèle complet, en une commande |
+| `python pipeline.py` | un lot depuis `prompts.json` |
+| l'interface web | un prompt, plusieurs variantes, un choix (voir *Pile web*) |
+
 ```
 prompt
   ├─ [A] src/planner.py     LLM libre, température 0.7          → plan.md
@@ -149,6 +157,66 @@ comparer des générations entre elles.
 groupes de nœuds de l'add-on datant de Blender 2.81. Workbench est rapide et détaillé mais
 son fond reste le gris du thème, non pilotable. Cycles rend correctement et respecte le
 fond configuré, pour 51 s sur un modèle de 1267 pièces.
+
+---
+
+---
+
+## Pile web
+
+Une interface pour saisir une description, comparer plusieurs variantes et garder celle
+qu'on préfère. Base, API et interface tournent en conteneurs ; **la génération reste sur
+l'hôte**, parce qu'un conteneur Linux ne peut pas exécuter `blender.exe`.
+
+```
+Docker                            Hôte Windows
+  api   FastAPI + interface         agent.py
+          dépose / lit les jobs  ──►  prend un job en attente
+  db    postgres  ◄────────────────   lance la chaîne de génération
+                                        LM Studio :1234
+  outputs/ monté en lecture seule       blender.exe
+```
+
+La **base sert de file d'attente** — pas de Redis, pas de Celery. Ça règle aussi un
+problème réel : le tueur de tâches par pression mémoire a déjà tué des runs (LM Studio
+retient ~18 Go). Un job interrompu reste en base et l'agent le reprend au redémarrage,
+au lieu d'être perdu.
+
+```powershell
+copy .env.example .env     # puis adapter si besoin
+docker compose up -d       # base + API + interface
+python agent.py            # sur la machine où sont Blender et LM Studio
+```
+
+Interface : <http://127.0.0.1:8000/ui/> — Vue 3 chargé par `<script>`, donc **aucune
+chaîne de build**, pas de node dans l'image.
+
+| Aspect | Choix |
+|---|---|
+| Ports | base 5442, API 8000, **uniquement sur `127.0.0.1`** |
+| Authentification | aucune, d'où l'écoute sur la boucle locale seulement |
+| `outputs/` | monté en **lecture seule** dans l'API : seul l'agent y écrit |
+| Chemins en base | **relatifs** à `outputs/` — l'agent est sous Windows, l'API sous Linux |
+
+### Ce qui est stocké
+
+Deux tables. `jobs` (une soumission : prompt, taille, état, étape en cours) et
+`variantes` (une par variante produite).
+
+La colonne qui compte est **`design_json`** : environ 1 à 2 ko, et toute la chaîne en
+aval étant déterministe, elle suffit à régénérer le `.ldr`, les rendus, la nomenclature
+et la notice **sans un seul appel LLM**. C'est la seule chose qu'on ne peut pas
+reconstruire, donc la seule qu'il faut absolument garder.
+
+Sont aussi conservées les métriques déjà calculées par le validateur (score, composantes,
+`z_min`, pièces flottantes) — l'historique devient triable par qualité pour zéro calcul
+supplémentaire — et de quoi expliquer un vieux résultat (`seed`, modèle LLM, commit git).
+
+À la sélection, les variantes non retenues sont **réduites, pas supprimées** : on garde
+`design_json`, les métriques et la seed (~2 ko chacune), on efface le PDF et les rendus.
+C'est la seule matière pour comprendre plus tard *ce que* le modèle rate.
+
+La nomenclature n'est **pas** stockée : c'est une fonction pure de `design_json`.
 
 ---
 
@@ -323,6 +391,25 @@ Deux exécutions successives n'écrasent jamais leurs résultats.
 
 ## État d'avancement
 
+Le suivi détaillé vit dans les [issues](https://github.com/KingBOOOH/LLMtoL/issues) et
+le tableau du projet. Résumé :
+
+| | Sujet | État |
+|---|---|---|
+| #1 | détection du piège LM Studio | fait |
+| #3 | `lego.py`, un modèle en une commande | fait |
+| #4 | tests de `instructions.py` et `bom.py` | fait |
+| #7 | conteneurs base + API + interface | fait |
+| #8 | persistance jobs et variantes | fait |
+| #10 | API backend | fait |
+| #11 | interface web Vue 3 | fait |
+| #13 | taille du modèle bornée par le schéma | fait |
+| #2 | mesure figée du jeu primitives | en cours — 3 formes sur 9 rejouées depuis la correction du `z` |
+| #9 | agent de génération | en cours — la plomberie est testée, **aucun modèle n'a encore été généré via la pile web** |
+| #5 | notice utilisable quelle que soit la taille | à faire |
+| #6 | constructibilité annoncée en français | à faire |
+| #12 | notice PDF | à faire |
+
 **Fait** — assainissement (appel LLM centralisé, journalisation complète, coordonnées
 entières, sorties horodatées) ; compilateur DSL → voxels ; pavage en vraies pièces avec
 décalage des joints type appareillage de maçonnerie ; export `.ldr` vérifié
@@ -330,19 +417,19 @@ visuellement dans LeoCAD ; catalogue et palette vérifiés contre la vraie bibli
 LDraw ; validateur géométrique ; harnais d'évaluation ; planificateur, designer
 contraint et boucle de réparation ; rendu Blender via ImportLDraw ; nomenclature
 (`bom.csv` / `bom.html`, avec vignette par référence) ; notice de montage
-(`notice.html`, étapes à nombre de pièces fixe, encart des pièces de l'étape).
+(`notice.html`, étapes à nombre de pièces fixe, encart des pièces de l'étape) ;
+taille bornée par le schéma ; pile web (conteneurs, base, API, interface, agent).
 
 **Résultat mesuré (v0 → v1, sur la connexité)** — les catégories qui marchaient déjà se
 maintiennent (véhicules 15/15 → 14/14, bâtiments 15/15 → 13/13) ; les créatures passent
 de **0/15 à 12/14** structures d'un seul tenant. 32 générations sur 33 n'ont eu besoin
 d'aucune réparation.
 
-**Résultat mesuré (formes primitives)** — l'hypothèse est confirmée et chiffrée : les
-formes exprimables en simples `box` atteignent **0,78 d'IoU**, les formes courbes
-**0,39**, pour un temps de génération **9× supérieur**. Le DSL n'est pas en cause — un
-test verrouille le fait qu'il peut exprimer un cylindre ou une sphère exactement
-(IoU aller-retour = 1,0). Le goulot est le modèle, à qui on demandait de rastériser des
-cercles en ASCII, c'est-à-dire de faire de l'arithmétique voxel de tête.
+**Le jeu de formes primitives a servi à isoler ce qui casse.** Sur un prompt
+sémantique, un mauvais résultat ne dit pas *où* ça rate ; sur « un cube 8×8×8 », l'écart
+devient un chiffre. Il a montré que le goulot était le modèle et non le DSL — un test
+verrouille le fait que le DSL exprime un cylindre ou une sphère exactement (IoU
+aller-retour = 1,0), alors que le modèle, lui, ne sait pas rastériser un cercle en ASCII.
 
 **Effet des corrections, mesuré** — opérations `cylinder`/`sphere`, puis correction du
 décalage `z`. Mesure figée : 3 tentatives par forme, via le vrai planificateur.
