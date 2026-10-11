@@ -23,6 +23,7 @@ import pipeline
 from src.bom import write_bom
 from src.dsl_schema import TAILLES
 from src.instructions import compose_all_steps, write_notice_html
+from src.pdf import write_pdf
 from src.llm_client import LLMCallError
 
 OUTPUTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "outputs")
@@ -83,6 +84,7 @@ def generer(prompt, run_dir, iterations=1, taille=None, avec_notice=True):
                             manifest_name="_manifest_notice.txt")
 
     for iter_dir, result, etape_dirs, piece_models, etapes in notices:
+        images = {}
         if etape_dirs:
             compose_all_steps(etapes, etape_dirs, piece_models)
             images = {c: os.path.join(d, "render_iso.png") for c, d in piece_models.items()}
@@ -90,6 +92,14 @@ def generer(prompt, run_dir, iterations=1, taille=None, avec_notice=True):
         write_notice_html(etapes, etape_dirs or [""] * len(etapes),
                           os.path.join(iter_dir, "notice.html"), result["nom"],
                           rapport=result["report"])
+        # Un PDF rate ne doit PAS invalider le modele, qui lui est bien genere.
+        try:
+            write_pdf(etapes, etape_dirs or [""] * len(etapes), result["placements"],
+                      iter_dir, result["nom"],
+                      rendu_final=os.path.join(iter_dir, "render_iso.png"),
+                      piece_images=images, prompt=prompt, rapport=result["report"])
+        except RuntimeError as e:
+            print(f"Notice PDF non produite : {e}")
 
     return produits, echecs
 
@@ -147,6 +157,9 @@ def main():
     print(f"Planche   : {os.path.join(premier, 'final.png')}")
     if not args.sans_notice:
         print(f"Notice    : {os.path.join(premier, 'notice.html')}")
+        pdf = os.path.join(premier, "notice.pdf")
+        if os.path.isfile(pdf):
+            print(f"Notice PDF: {pdf}")
     # Code de sortie non nul si une iteration au moins a echoue, pour qu'un script
     # appelant puisse le detecter.
     if echecs:
