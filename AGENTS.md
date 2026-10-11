@@ -27,11 +27,19 @@ eval/results/ mais ne sont plus regénérables.
 
 Architecture réelle
 
-Point d'entrée principal :
+Points d'entrée :
 
+lego.py
+  Un prompt -> un dossier complet (plan, design, model.ldr, 4 rendus, planche,
+  nomenclature, notice). Options : --taille, --iterations, --sans-notice.
 pipeline.py
-  Orchestrateur bout-en-bout. Lit prompts.json, génère tous les modèles, puis lance UN
-  SEUL processus Blender pour tout rendre, et assemble les planches.
+  Orchestrateur de lot. Lit prompts.json, génère tous les modèles, puis lance UN
+  SEUL processus Blender pour tout rendre, et assemble les planches. Expose
+  generer_modele / preparer_notice / render_all, réutilisés par lego.py et agent.py :
+  un seul chemin de génération dans le projet.
+agent.py
+  Prend les jobs déposés en base par l'API web et les traite sur l'hôte (Blender et
+  LM Studio y sont). Reprend un job abandonné après une coupure mémoire.
 
 Génération (appels LLM) :
 
@@ -174,6 +182,15 @@ autant de tenons en X/Y que de plates en Z, or un tenon fait 20 LDU et une plate
 src/primitives.py assume ce choix et les références d'IoU l'utilisent ; changer l'un
 sans l'autre rendrait la métrique fausse.
 
+La taille demandee (--taille / bbox_max) est une garantie par le schema, pas une
+consigne : build_schema() resserre bbox ET coordonnees. Mesure, 3 generations par
+taille : 0 depassement sur 9. MAIS la borne est un PLAFOND, pas une cible — `petite`
+sature sa borne (16x16x20 aux 3 essais), `grande` ne la touche jamais (16x16x24,
+24x24x24, 16x16x12) parce que le planificateur choisit ce qu'il juge raisonnable.
+Choisir `grande` n'a donc aucun effet observable aujourd'hui. Et le nombre de pieces
+ne suit pas la taille (petite 50-143, moyenne 65-241, grande 137-189) : il depend du
+creux du modele. La garantie porte sur la boite englobante, pas sur le compte.
+
 EEVEE rend les pièces en aplat uniforme (groupes de nœuds de l'add-on écrits pour Blender
 2.81). Utiliser Cycles, ou Workbench pour itérer vite.
 
@@ -287,10 +304,12 @@ Prérequis vérifiables d'un coup : python tools/check_env.py
 
 Commandes utiles
 
-python -m pytest tests/ -q                      tests (64)
+python -m pytest tests/ -q                      tests (97)
 python tools/check_env.py                       diagnostic environnement
-python pipeline.py                              bout-en-bout depuis prompts.json
-python -m src.designer "<prompt>" <dossier>     une seule génération
+python lego.py "<prompt>"                       UN modèle complet, en une commande
+python lego.py "<prompt>" --taille petite --iterations 3
+python pipeline.py                              lot depuis prompts.json
+python -m src.designer "<prompt>" <dossier>     design seul, sans rendu ni notice
 python -m tools.build_from_design <design.json> design -> .ldr, sans LLM
 python -m tools.render_batch --glob "<motif>" --assemble
 python -m eval.run_eval --version v1 --n 3
