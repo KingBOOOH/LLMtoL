@@ -177,6 +177,11 @@ Docker                            Hôte Windows
   outputs/ monté en lecture seule       blender.exe
 ```
 
+L'agent émet son signe de vie depuis un **thread dédié**, et non depuis sa boucle
+principale : celle-ci est bloquée plusieurs minutes pendant un rendu Blender, et l'API
+déclarait alors l'agent mort au moment précis où il travaillait le plus (mesuré :
+3 min 05 sans signal pour un délai de 90 s).
+
 La **base sert de file d'attente** — pas de Redis, pas de Celery. Ça règle aussi un
 problème réel : le tueur de tâches par pression mémoire a déjà tué des runs (LM Studio
 retient ~18 Go). Un job interrompu reste en base et l'agent le reprend au redémarrage,
@@ -448,7 +453,7 @@ python -m tools.recover_eval eval/results/_work/v1 v1_recovered
 python -m pytest tests/ -q
 ```
 
-124 tests, couvrant le schéma DSL, le compilateur, le pavage, le validateur, les
+129 tests, couvrant le schéma DSL, le compilateur, le pavage, le validateur, les
 primitives, la nomenclature, le découpage en étapes, la notice PDF et la
 détection du piège LM Studio.
 Deux d'entre eux valent d'être signalés : l'un verrouille le fait que le DSL exprime
@@ -505,7 +510,7 @@ le tableau du projet. Résumé :
 | #11 | interface web Vue 3 | fait |
 | #13 | taille du modèle bornée par le schéma | fait |
 | #2 | mesure figée du jeu primitives | en cours — 3 formes sur 9 rejouées depuis la correction du `z` |
-| #9 | agent de génération | en cours — la plomberie est testée, **aucun modèle n'a encore été généré via la pile web** |
+| #9 | agent de génération | fait — validé par une génération réelle de bout en bout |
 | #5 | notice utilisable quelle que soit la taille | fait |
 | #6 | constructibilité annoncée en français | fait |
 | #12 | notice PDF | fait |

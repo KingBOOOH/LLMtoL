@@ -249,7 +249,10 @@
     <div class="ligne">
       <div style="flex:0 0 auto">
         <button v-if="ouvert.a_un_pdf" @click="telecharger(ouvert)">Télécharger la notice PDF</button>
-        <span v-else class="vide-doux">Notice PDF en préparation…</span>
+        <span v-else-if="enCours(ouvert)" class="vide-doux">
+          Notice PDF en préparation<template v-if="ouvert.etape"> &mdash; {{ ouvert.etape }}</template>&hellip;
+        </span>
+        <span v-else class="vide-doux">Pas de notice PDF pour ce modèle.</span>
       </div>
       <div style="flex:0 0 auto">
         <button class="discret" @click="ouvert = null">Fermer</button>
@@ -367,6 +370,9 @@ Vue.createApp({
     },
     telecharger(j) { window.location = `/api/jobs/${j.id}/pdf`; },
     retenueDe(j) { return (j.variantes || []).find(v => v.is_chosen) || null; },
+    // "en preparation" ne doit s'afficher que si quelque chose se prepare vraiment :
+    // sur un job termine sans PDF, ce serait une attente qui ne finit jamais.
+    enCours(j) { return EN_COURS.includes(j.status); },
     avertissements(j) {
       // Traduit les metriques du validateur en phrases lisibles. Le calcul est deja
       // fait cote Python, ici on ne fait que le dire en francais.
