@@ -27,6 +27,11 @@ FICHIER_DE_VUE = {"iso": "render_iso.png", "top": "render_top.png",
                   "front": "render_front.png", "right": "render_right.png",
                   "final": "final.png"}
 
+# Duplique volontairement src.dsl_schema.TAILLES : le conteneur api ne contient que
+# server/, pas src/ (il n'a ni Blender ni la chaine de generation). La source de verite
+# reste src/dsl_schema.py, qui porte les bornes reelles ; ici on ne valide que le nom.
+# Si une taille y est ajoutee, l'ajouter aussi ici — un test le rappellerait, mais il
+# ne peut pas tourner dans le conteneur.
 TAILLES = {"petite", "moyenne", "grande"}
 
 app = FastAPI(title="LLMtoL", docs_url="/api/docs", openapi_url="/api/openapi.json")

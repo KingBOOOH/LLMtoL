@@ -51,9 +51,6 @@ INTERVALLE_S = int(os.environ.get("LEGO_AGENT_POLL_S", "3"))
 # minutes sur un modele gros ou courbe.
 REPRISE_APRES_S = int(os.environ.get("LEGO_AGENT_STALE_S", "1800"))
 
-# Bornes de bbox par taille demandee. Reservees a US-05 : tant que le schema DSL n'est
-# pas parametrable, la valeur est enregistree mais pas encore appliquee.
-TAILLES_BBOX = {"petite": [16, 16, 20], "moyenne": [28, 28, 36], "grande": [48, 48, 60]}
 
 
 def log(msg):
@@ -151,7 +148,8 @@ def produire_variantes(session, job):
         variante = Variante(job_id=job.id, indice=i)
         t0 = time.time()
         try:
-            result = pipeline.generer_modele(job.prompt, iter_dir, log_path)
+            result = pipeline.generer_modele(job.prompt, iter_dir, log_path,
+                                             taille=job.taille)
         except (LLMCallError, RuntimeError) as e:
             # Echec attendu : reseau, ou design toujours invalide apres reparations.
             # Une variante ratee ne doit pas faire tomber les autres.
