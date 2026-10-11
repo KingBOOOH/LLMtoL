@@ -37,6 +37,7 @@ from src.designer import design as make_design
 from src.instructions import (compose_all_steps, write_notice_html, write_piece_models,
                               write_step_models)
 from src.ldraw_writer import write_ldr
+from src.pdf import write_pdf
 from src.llm_client import LLMCallError
 from src.planner import plan as make_plan
 
@@ -271,6 +272,13 @@ def main():
                               os.path.join(iter_dir, "notice.html"), nom,
                               rapport=result_report)
         print(f"Notice : {n} etapes -> {os.path.join(iter_dir, 'notice.html')}")
+        # Un PDF rate ne doit PAS invalider le modele, qui lui est bien genere.
+        try:
+            write_pdf(etapes, etape_dirs or [""] * len(etapes), placements, iter_dir, nom,
+                      rendu_final=os.path.join(iter_dir, "render_iso.png"),
+                      piece_images=images, rapport=result_report)
+        except RuntimeError as e:
+            print(f"Notice PDF non produite : {e}")
 
     print(f"\n=========================")
     print(f"TOTAL : {time.time() - total_start:.0f}s")

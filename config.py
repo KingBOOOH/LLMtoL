@@ -10,6 +10,21 @@ Verifier que ces valeurs correspondent a la machine : python tools/check_env.py
 # Executable Blender, appele en mode --background par pipeline.py.
 BLENDER_EXE = r"C:\Program Files\Blender Foundation\Blender 5.1\blender.exe"
 
+# Navigateur utilise en mode headless pour convertir la notice HTML en PDF.
+# Pourquoi un navigateur : notice.html et bom.html existent deja, avec leur mise en page
+# et leurs images. Les reecrire dans reportlab serait la meme chose en double, qui
+# divergerait. Edge est livre avec Windows, Chrome fait aussi bien : zero dependance
+# nouvelle. Le premier chemin existant est retenu ; dans un conteneur, remplacer par
+# /usr/bin/chromium suffit.
+NAVIGATEURS_PDF = [
+    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+    r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    "/usr/bin/chromium",
+    "/usr/bin/google-chrome",
+]
+
 # Serveur local LM Studio, API compatible OpenAI (endpoint chat completions).
 LM_STUDIO_URL = "http://localhost:1234/v1/chat/completions"
 

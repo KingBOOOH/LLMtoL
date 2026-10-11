@@ -309,6 +309,41 @@ Deux points d'implémentation :
 Un test vérifie qu'aucune phrase ne contient de vocabulaire interne — pas de « voxel »,
 pas de « composante connexe ».
 
+### La notice PDF
+
+Un fichier unique à imprimer, produit pour chaque modèle (et, côté web, pour la seule
+variante retenue — le produire pour les quatre reviendrait à en jeter trois).
+
+| Page | Contenu |
+|---|---|
+| 1 | le rendu du modèle **terminé**, en grand, avec le nom, la demande d'origine, la date et le nombre de pièces |
+| 2 | une présentation courte de LLMtoL et de son principe |
+| 3… | les étapes de montage, précédées de l'état de constructibilité |
+| fin | la liste complète des pièces : image, quantité, référence LDraw, dimensions, couleur |
+
+**Choix technique.** `notice.html` et `bom.html` existent déjà avec leur mise en page et
+leurs images. Les réécrire dans un moteur PDF donnerait deux mises en page à maintenir,
+qui divergeraient. On compose donc un HTML unique et on le fait **imprimer par un
+navigateur en mode headless** : Edge est livré avec Windows, Chrome fait aussi bien.
+**Zéro dépendance nouvelle.**
+
+Le chemin du navigateur vit dans `config.NAVIGATEURS_PDF`, à côté de `BLENDER_EXE` ; le
+premier existant est retenu, sinon le `PATH` est consulté. Pour containeriser la
+génération un jour, ajouter `/usr/bin/chromium` suffit — il y est déjà.
+
+Mesuré : **1,7 s** pour un modèle de 37 pièces, PDF de 90 ko en 4 pages.
+
+Deux garde-fous :
+
+- Chaque étape porte `page-break-inside: avoid` : **aucune étape n'est coupée** entre
+  deux pages, ce qui la rendrait inutilisable au montage.
+- Un PDF qui échoue **n'invalide pas le modèle**, qui lui est bien généré. Le message le
+  dit, le `.ldr` et la notice HTML restent là, et l'interface web affiche simplement que
+  le PDF manque.
+
+Le HTML intermédiaire est conservé à côté (`notice_pdf.html`) : il explique un PDF raté
+sans avoir à tout rejouer.
+
 ### La taille demandée
 
 `--taille petite|moyenne|grande` (ou `--bbox-max XxYxZ`) resserre les bornes du schéma
@@ -413,8 +448,9 @@ python -m tools.recover_eval eval/results/_work/v1 v1_recovered
 python -m pytest tests/ -q
 ```
 
-112 tests, couvrant le schéma DSL, le compilateur, le pavage, le validateur, les
-primitives, la nomenclature, le découpage en étapes et la détection du piège LM Studio.
+124 tests, couvrant le schéma DSL, le compilateur, le pavage, le validateur, les
+primitives, la nomenclature, le découpage en étapes, la notice PDF et la
+détection du piège LM Studio.
 Deux d'entre eux valent d'être signalés : l'un verrouille le fait que le DSL exprime
 *exactement* un cylindre ou une sphère (IoU aller-retour = 1,0), l'autre que resserrer
 le `bbox` resserre **aussi** les coordonnées — sans quoi la borne de taille ne
@@ -472,7 +508,7 @@ le tableau du projet. Résumé :
 | #9 | agent de génération | en cours — la plomberie est testée, **aucun modèle n'a encore été généré via la pile web** |
 | #5 | notice utilisable quelle que soit la taille | fait |
 | #6 | constructibilité annoncée en français | fait |
-| #12 | notice PDF | à faire |
+| #12 | notice PDF | fait |
 
 **Fait** — assainissement (appel LLM centralisé, journalisation complète, coordonnées
 entières, sorties horodatées) ; compilateur DSL → voxels ; pavage en vraies pièces avec

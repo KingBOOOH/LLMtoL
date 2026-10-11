@@ -38,6 +38,7 @@ import config
 import pipeline
 from server.db import AGENT_TIMEOUT_S, Agent, Job, Session, Variante
 from src.instructions import compose_all_steps, write_notice_html
+from src.pdf import write_pdf
 from src.llm_client import LLMCallError
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -226,6 +227,7 @@ def finir(session, job):
     etape_dirs, piece_models, etapes = pipeline.preparer_notice(
         placements, iter_dir, retenue.name or "modele", log_path)
 
+    images_pieces = {}
     if etape_dirs:
         _etat(session, job, f"rendu de {len(etapes)} etapes")
         env = os.environ.copy()
@@ -237,15 +239,33 @@ def finir(session, job):
         compose_all_steps(etapes, etape_dirs, piece_models)
 
         from src.bom import write_bom
-        images = {cle: os.path.join(d, "render_iso.png") for cle, d in piece_models.items()}
-        write_bom(placements, iter_dir, retenue.name or "modele", piece_images=images)
+        images_pieces = {cle: os.path.join(d, "render_iso.png")
+                         for cle, d in piece_models.items()}
+        write_bom(placements, iter_dir, retenue.name or "modele",
+                  piece_images=images_pieces)
 
     write_notice_html(etapes, etape_dirs or [""] * len(etapes),
                       os.path.join(iter_dir, "notice.html"), retenue.name or "modele",
                       rapport=rapport)
 
-    # ponytail: pas de PDF ici, c'est US-10 (issue #12) — il depend de US-02 et US-03.
-    # La colonne variantes.pdf reste nulle et l'interface affiche "en preparation".
+    # PDF de la SEULE variante retenue : le produire pour les 4 reviendrait a en jeter
+    # les trois quarts. Un echec ici ne met pas le job en echec — le modele est bon,
+    # c'est le PDF qui manque, et l'interface le dit.
+    _etat(session, job, "notice PDF")
+    try:
+        chemin_pdf = write_pdf(
+            etapes, etape_dirs or [""] * len(etapes), placements, iter_dir,
+            retenue.name or "modele",
+            rendu_final=os.path.join(iter_dir, "render_iso.png"),
+            piece_images=images_pieces, prompt=job.prompt,
+            identifiant=str(job.id), rapport=rapport)
+        with open(chemin_pdf, "rb") as f:
+            retenue.pdf = f.read()
+        session.add(retenue)
+        session.commit()
+        log(f"job {job.id} : PDF de {len(retenue.pdf)} octets enregistre")
+    except (RuntimeError, OSError) as e:
+        log(f"job {job.id} : PDF non produit ({e})")
 
     # Les variantes rejetees gardent design_json, metriques et seed (~2 ko) mais plus
     # leurs rendus : c'est le seul materiau pour comprendre plus tard ce que le modele
