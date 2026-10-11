@@ -181,9 +181,16 @@ def reprendre_les_abandonnes(session, limite=None):
     return len(abandonnes)
 
 
-def _etat(session, job, etape):
-    """Met a jour le texte d'avancement lu par l'interface."""
+def _etat(session, job, etape, fait=None, total=None):
+    """Met a jour l'avancement lu par l'interface.
+
+    fait / total ne sont renseignes que lorsqu'ils representent quelque chose de
+    reel. Une etape sans sous-progression mesurable les remet a None : l'interface
+    affiche alors une barre indeterminee plutot qu'une fausse progression.
+    """
     job.etape = etape
+    job.etape_fait = fait
+    job.etape_total = total
     session.add(job)
     session.commit()
 
@@ -195,7 +202,7 @@ def produire_variantes(session, job):
     dossiers = []
 
     for i in range(1, job.n_variantes + 1):
-        _etat(session, job, f"design {i}/{job.n_variantes}")
+        _etat(session, job, "design", fait=i, total=job.n_variantes)
         iter_dir = os.path.join(run_dir, f"variante_{i:02d}")
         os.makedirs(iter_dir, exist_ok=True)
         log_path = os.path.join(iter_dir, "log.txt")
@@ -239,8 +246,10 @@ def produire_variantes(session, job):
     if not dossiers:
         raise RuntimeError("aucune variante n'a abouti")
 
-    _etat(session, job, f"rendu de {len(dossiers)} variante(s)")
-    pipeline.render_all(dossiers, run_dir)
+    _etat(session, job, "rendu des variantes", fait=0, total=len(dossiers))
+    pipeline.render_all(
+        dossiers, run_dir,
+        on_progress=lambda k, n: _etat(session, job, "rendu des variantes", k, n))
 
     # La nomenclature a besoin du nombre de references : calculee ici, apres coup,
     # pour ne pas rallonger la phase de design.
@@ -251,7 +260,7 @@ def produire_variantes(session, job):
             from src.tiler import tile
             v.n_references = len(build_bom(tile(compile_design(v.design_json))))
     job.status = "a_choisir"
-    job.etape = None
+    job.etape = job.etape_fait = job.etape_total = None
     session.add(job)
     session.commit()
     log(f"job {job.id} : {len(dossiers)} variante(s) pretes, en attente du choix")
@@ -283,13 +292,15 @@ def finir(session, job):
 
     images_pieces = {}
     if etape_dirs:
-        _etat(session, job, f"rendu de {len(etapes)} etapes")
+        a_rendre = list(etape_dirs) + list(piece_models.values())
+        _etat(session, job, "rendu des etapes", fait=0, total=len(a_rendre))
         env = os.environ.copy()
         env["LEGO_RENDER_MARGIN"] = os.environ.get("LEGO_NOTICE_MARGIN", "1.7")
         env["LEGO_RENDER_VIEWS"] = "iso"
-        pipeline.render_all(list(etape_dirs) + list(piece_models.values()), run_dir,
-                            assemble_dirs=[], env_extra=env,
-                            manifest_name="_manifest_notice.txt")
+        pipeline.render_all(
+            a_rendre, run_dir, assemble_dirs=[], env_extra=env,
+            manifest_name="_manifest_notice.txt",
+            on_progress=lambda k, n: _etat(session, job, "rendu des etapes", k, n))
         compose_all_steps(etapes, etape_dirs, piece_models)
 
         from src.bom import write_bom
@@ -332,7 +343,7 @@ def finir(session, job):
             v.render_dir = None
 
     job.status = "terminee"
-    job.etape = None
+    job.etape = job.etape_fait = job.etape_total = None
     job.finished_at = datetime.now(timezone.utc)
     session.add(job)
     session.commit()
@@ -356,7 +367,7 @@ def traiter_un(session):
         log(f"job {job.id} ECHEC : {e}")
         traceback.print_exc()
         job.status = "echec"
-        job.etape = None
+        job.etape = job.etape_fait = job.etape_total = None
         job.error_message = str(e)[:500]
         job.finished_at = datetime.now(timezone.utc)
         session.add(job)
@@ -381,13 +392,18 @@ def main():
             raise SystemExit("\nAgent non demarre. Corrige le point ci-dessus, ou "
                              "--skip-env-check pour forcer.")
 
+    demarrage = datetime.now(timezone.utc)
     arret = threading.Event()
     # Thread dedie : le signe de vie doit continuer pendant un rendu Blender, qui
     # bloque la boucle principale plusieurs minutes.
     threading.Thread(target=boucle_signe_de_vie, args=(arret,), daemon=True).start()
 
     with Session() as session:
-        reprendre_les_abandonnes(session)
+        # Au demarrage, tout job encore "en_cours" a ete reclame par une incarnation
+        # precedente de l'agent, puisque celle-ci vient de naitre. Inutile d'attendre
+        # REPRISE_APRES_S : sans ca, un agent relance laissait son ancien job bloque
+        # une demi-heure, et l'interface affichait deux generations en cours.
+        reprendre_les_abandonnes(session, limite=demarrage)
         log(f"en attente de jobs (signe de vie toutes les {INTERVALLE_S}s dans un "
             f"thread dedie, delai cote API {AGENT_TIMEOUT_S}s)")
         while True:

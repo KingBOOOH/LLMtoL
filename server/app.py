@@ -70,6 +70,8 @@ def _job_json(job, avec_variantes=True):
         "n_variantes": job.n_variantes,
         "status": job.status,
         "etape": job.etape,
+        "etape_fait": job.etape_fait,
+        "etape_total": job.etape_total,
         "created_at": job.created_at.isoformat() if job.created_at else None,
         "finished_at": job.finished_at.isoformat() if job.finished_at else None,
         "error_message": job.error_message,

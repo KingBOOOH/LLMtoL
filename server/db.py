@@ -48,6 +48,9 @@ class Job(Base):
     n_variantes: Mapped[int] = mapped_column(Integer, nullable=False, default=4)
     status: Mapped[str] = mapped_column(Text, nullable=False, default="en_attente")
     etape: Mapped[str | None] = mapped_column(Text)
+    # Avancement chiffre de l'etape courante, nul quand il n'est pas mesurable.
+    etape_fait: Mapped[int | None] = mapped_column(Integer)
+    etape_total: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),
                                                  server_default=func.now())
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

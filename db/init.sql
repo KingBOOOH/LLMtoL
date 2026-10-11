@@ -23,6 +23,13 @@ CREATE TABLE jobs (
     -- qu'un sablier.
     etape         text,
 
+    -- Avancement CHIFFRE de l'etape en cours, quand il est reellement connu :
+    -- "design 2/4", "rendu 38/46". Nul quand l'etape n'a pas de sous-progression
+    -- mesurable (planification, ecriture de la notice). Mieux vaut pas de barre
+    -- qu'une barre qui avance toute seule sans rien representer.
+    etape_fait    int,
+    etape_total   int,
+
     created_at    timestamptz NOT NULL DEFAULT now(),
     claimed_at    timestamptz,
     finished_at   timestamptz,
