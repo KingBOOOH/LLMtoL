@@ -1,6 +1,13 @@
-# Base + API + interface en conteneurs. Blender, LM Studio et la bibliotheque LDraw
-# restent sur l'hote : un conteneur Linux ne peut pas executer blender.exe. C'est
-# l'agent (agent.py, cote hote) qui prend les jobs deposes en base par l'API.
+# Base, API, interface ET generation en conteneurs.
+#
+# L'agent (profil "conteneur") embarque Blender, l'add-on ImportLDraw et la bibliotheque
+# LDraw a des versions figees : `docker compose --profile conteneur up -d` suffit alors
+# a tout demarrer. LM Studio RESTE SUR L'HOTE — il tient ~18 Go en memoire et veut le
+# CPU de la machine — et est joint par host.docker.internal.
+#
+# Le mode hote reste entier : sans ce profil, rien ne change et `python agent.py`
+# continue de fonctionner a l'identique. C'est volontaire, les deux chemins ont leur
+# usage (l'hote pour developper, le conteneur pour installer ou montrer).
 
 services:
   db:
@@ -48,6 +55,35 @@ services:
       # visible au rechargement de la page, sans `docker compose build`. L'image garde
       # sa propre copie, donc elle reste autonome sans ce montage.
       - ./server:/app/server:ro
+
+  agent:
+    # Profil : ce service ne demarre QUE sur demande explicite, par
+    #   docker compose --profile conteneur up -d
+    # Sans lui, `docker compose up -d` se comporte exactement comme avant, et c'est
+    # l'agent de l'hote qui travaille. Deux agents a la fois prendraient des jobs
+    # differents (FOR UPDATE SKIP LOCKED) mais se disputeraient LM Studio : un seul.
+    profiles: ["conteneur"]
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      # LM Studio tourne sur l'hote : "localhost" designerait le conteneur.
+      LM_STUDIO_URL: ${LM_STUDIO_URL_CONTENEUR:-http://host.docker.internal:1234/v1/chat/completions}
+      LM_STUDIO_MODEL: ${LM_STUDIO_MODEL:-qwen/qwen3-coder-30b}
+      AGENT_TIMEOUT_S: ${AGENT_TIMEOUT_S:-90}
+    extra_hosts:
+      # Docker Desktop le fournit deja ; la ligne rend le service portable sur un
+      # Docker Linux, ou host-gateway doit etre demande explicitement.
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # EN ECRITURE, contrairement a l'API : c'est l'agent qui produit les rendus, et
+      # l'API ne fait que les servir.
+      - ./outputs:/app/outputs
 
 volumes:
   db_data:

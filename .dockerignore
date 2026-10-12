@@ -1,0 +1,22 @@
+# Ce qui ne doit JAMAIS partir dans le contexte de build.
+#
+# outputs/ et eval/results/ pesent plusieurs centaines de Mo de rendus et de journaux.
+# Sans ce fichier, chaque `docker compose build` les envoie au demon avant meme de
+# commencer, et aucun COPY ne les reclame. outputs/ est de toute facon monte en volume.
+
+outputs/
+eval/results/
+.git/
+.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Secrets et etat local : rien a voir avec l'image.
+.env
+*.log
+
+# Sorties de travail du depot
+graphify-out/

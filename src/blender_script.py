@@ -131,6 +131,15 @@ def import_model(path):
     if not os.path.isfile(path):
         raise ModelError(f"model.ldr introuvable : {path}")
 
+    # ldrawPath explicite quand l'appelant l'a resolu. Sans lui, l'add-on se rabat sur
+    # ses PREFERENCES ENREGISTREES : ca marche sur un poste deja configure a la main,
+    # et echoue sur "Could not find LDraw Part Library" partout ailleurs — conteneur,
+    # profil Blender neuf, autre machine. Le projet sait ou est la bibliotheque
+    # (src.catalog), autant le dire plutot que de dependre d'un reglage invisible.
+    options = {}
+    if os.environ.get("LEGO_LDRAW_DIR"):
+        options["ldrawPath"] = os.environ["LEGO_LDRAW_DIR"]
+
     bpy.ops.import_scene.importldraw(
         filepath=path,
         addEnvironment=False,
@@ -140,6 +149,7 @@ def import_model(path):
         useLogoStuds=False,
         bevelEdges=True,
         smoothParts=True,
+        **options,
     )
 
     meshes = [o for o in bpy.context.scene.objects if o.type == "MESH"]

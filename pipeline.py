@@ -48,6 +48,17 @@ from src.planner import plan as make_plan
 from src.wanted_list import write_wanted_list
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _bibliotheque_ldraw():
+    """Chemin de la bibliotheque LDraw, transmis a Blender dans l'environnement.
+
+    Blender tourne dans un autre processus, avec son propre Python : il ne peut pas
+    appeler src.catalog. Lui passer le chemin evite de dependre des preferences
+    enregistrees de l'add-on, qui n'existent que sur un poste configure a la main.
+    """
+    from src.catalog import _find_ldraw_library
+    return _find_ldraw_library()
 SRC_DIR = os.path.join(BASE_DIR, "src")
 OUTPUTS_DIR = os.path.join(BASE_DIR, "outputs")
 
@@ -181,6 +192,7 @@ def render_all(work_dirs, run_dir, assemble_dirs=None, env_extra=None,
     env = (env_extra or os.environ).copy()
     env["LEGO_BATCH_MANIFEST"] = manifest
     env["PYTHONIOENCODING"] = "utf-8"
+    env.setdefault("LEGO_LDRAW_DIR", _bibliotheque_ldraw() or "")
 
     print(f"\nRendu de {len(work_dirs)} modeles en un seul processus Blender...")
     t0 = time.time()

@@ -35,6 +35,10 @@ def write_manifest(work_dirs, path):
     sont normalises car le Python de Blender est natif Windows et ne comprend pas la
     forme /c/Users/... de Git Bash.
     """
+    # Le dossier n'existe pas forcement : depot fraichement clone, ou conteneur ou
+    # outputs/ n'arrive que par un montage. Le creer vaut mieux qu'echouer sur le
+    # chemin d'un fichier de travail.
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.writelines(os.path.abspath(d) + "\n" for d in work_dirs)
     return path
@@ -47,6 +51,9 @@ def render(work_dirs, engine=None, samples=None, resolution=None):
     env = os.environ.copy()
     env["LEGO_BATCH_MANIFEST"] = manifest
     env["PYTHONIOENCODING"] = "utf-8"
+    if not env.get("LEGO_LDRAW_DIR"):
+        from src.catalog import _find_ldraw_library
+        env["LEGO_LDRAW_DIR"] = _find_ldraw_library() or ""
     if engine:
         env["LEGO_RENDER_ENGINE"] = engine
     if samples:
