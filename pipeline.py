@@ -35,11 +35,15 @@ sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 import config
 from src.bom import write_bom
 from src.designer import design as make_design
-from src.instructions import (compose_all_steps, write_notice_html, write_piece_models,
-                              write_step_models)
+from src.instructions import (
+    compose_all_steps,
+    write_notice_html,
+    write_piece_models,
+    write_step_models,
+)
 from src.ldraw_writer import write_ldr
-from src.pdf import write_pdf
 from src.llm_client import LLMCallError
+from src.pdf import write_pdf
 from src.planner import plan as make_plan
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -158,8 +162,7 @@ def render_all(work_dirs, run_dir, assemble_dirs=None, env_extra=None,
 
     manifest = os.path.join(run_dir, manifest_name)
     with open(manifest, "w", encoding="utf-8") as f:
-        for d in work_dirs:
-            f.write(os.path.abspath(d) + "\n")
+        f.writelines(os.path.abspath(d) + "\n" for d in work_dirs)
 
     env = (env_extra or os.environ).copy()
     env["LEGO_BATCH_MANIFEST"] = manifest
@@ -177,7 +180,7 @@ def render_all(work_dirs, run_dir, assemble_dirs=None, env_extra=None,
         env_img["LEGO_WORK_DIR"] = os.path.abspath(work_dir)
         env_img["PYTHONIOENCODING"] = "utf-8"
         if subprocess.run([sys.executable, IMG_SCRIPT], env=env_img,
-                          capture_output=True).returncode == 0:
+                          capture_output=True, check=False).returncode == 0:
             assembled += 1
     print(f"Planches assemblees : {assembled}")
 
@@ -199,7 +202,7 @@ def _rendre_en_suivant(env, on_progress):
         if m:
             try:
                 on_progress(int(m.group(1)), int(m.group(2)))
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - voir ci-dessous
                 # Un rapport d'avancement casse ne doit jamais interrompre un rendu
                 # de plusieurs minutes deja engage.
                 print(f"(suivi d'avancement ignore : {e})")
@@ -275,8 +278,8 @@ def main():
                 # Echec attendu : reseau, ou design toujours invalide apres reparations.
                 log_line(log_path, f"ECHEC : {e}")
                 failures.append({"prompt": prompt_idx, "iteration": j, "error": str(e)})
-            except Exception as e:
-                log_line(log_path, f"ECHEC inattendu : {e}")
+            except Exception as e:  # noqa: BLE001 - une iteration qui echoue
+                log_line(log_path, f"ECHEC inattendu : {e}")  # n'arrete pas les suivantes
                 failures.append({"prompt": prompt_idx, "iteration": j, "error": str(e)})
 
     render_all(generated, run_dir)
@@ -314,7 +317,7 @@ def main():
         except RuntimeError as e:
             print(f"Notice PDF non produite : {e}")
 
-    print(f"\n=========================")
+    print("\n=========================")
     print(f"TOTAL : {time.time() - total_start:.0f}s")
     print(f"Run : {run_dir}")
     print(f"Modeles generes : {len(generated)}/{total_iterations}")
@@ -324,9 +327,8 @@ def main():
     if failures:
         summary_path = os.path.join(run_dir, "errors_summary.txt")
         with open(summary_path, "w", encoding="utf-8") as f:
-            for fail in failures:
-                f.write(f"prompt_{fail['prompt']:03d} / iteration_{fail['iteration']:03d} : "
-                        f"{fail['error']}\n")
+            f.writelines(f"prompt_{fail['prompt']:03d} / iteration_{fail['iteration']:03d} : "
+                        f"{fail['error']}\n" for fail in failures)
         print(f"Resume des erreurs : {summary_path}")
 
 

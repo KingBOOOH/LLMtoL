@@ -29,3 +29,6 @@ Thumbs.db
 
 # --- Pile web ---
 .env
+
+# --- Linter ---
+.ruff_cache/

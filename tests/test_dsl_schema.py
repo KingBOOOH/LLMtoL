@@ -1,5 +1,6 @@
 import os
 import sys
+from pathlib import Path
 
 import pytest
 from jsonschema import Draft202012Validator, ValidationError
@@ -175,7 +176,7 @@ def test_tailles_de_lapi_et_du_schema_restent_alignees():
 
     from src.dsl_schema import TAILLES
 
-    source = open("server/app.py", encoding="utf-8").read()
+    source = Path("server/app.py").read_text(encoding="utf-8")
     bloc = re.search(r"^TAILLES = \{(.+?)\}", source, re.MULTILINE | re.DOTALL).group(1)
     cote_api = set(re.findall(r'"(\w+)"', bloc))
     assert cote_api == set(TAILLES), (

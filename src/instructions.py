@@ -108,7 +108,7 @@ def compose_step_image(step_render, piece_images, out_path, largeur_encart=0.16)
         return False
 
     base = Image.open(step_render).convert("RGB")
-    W, H = base.size
+    W, _ = base.size
 
     vignettes = [(p, n) for p, n in piece_images if os.path.isfile(p)]
     if not vignettes:

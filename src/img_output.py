@@ -6,6 +6,7 @@ manque — mieux vaut une erreur nette qu'une planche silencieusement incomplete
 """
 
 import os
+
 from PIL import Image, ImageDraw, ImageFont
 
 WORK_DIR = os.environ.get("LEGO_WORK_DIR", os.getcwd())
@@ -51,7 +52,7 @@ draw.line([(0, h), (w * 2, h)], fill=(255, 255, 255), width=3)
 
 try:
     font = ImageFont.truetype("arial.ttf", 24)
-except:
+except OSError:
     font = ImageFont.load_default()
 
 labels = {

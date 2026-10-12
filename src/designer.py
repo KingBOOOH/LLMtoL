@@ -105,7 +105,7 @@ def design(user_prompt, plan_text, work_dir, seed=None, taille=None, bbox_max=No
     extra_messages = list(_FEWSHOT_MESSAGES)
     last_report = None
 
-    for attempt in range(0, MAX_REPAIRS + 1):
+    for attempt in range(MAX_REPAIRS + 1):
         tag = "designer" if attempt == 0 else f"designer_repair{attempt}"
 
         content, _metadata = call_llm(
@@ -116,8 +116,12 @@ def design(user_prompt, plan_text, work_dir, seed=None, taille=None, bbox_max=No
         try:
             parsed = json.loads(_extract_json(content))
             validate_design(parsed, schema)
-        except Exception as e:
-            last_report = {"score": 0.0, "errors": [f"JSON/schema invalide : {e}"], "warnings": [], "metrics": {}}
+        # Capture large volontaire : tout echec de parsing ou de validation alimente
+        # la boucle de reparation, qui renvoie l'erreur au modele. Restreindre la
+        # capture laisserait passer une generation cassee au lieu de la faire reparer.
+        except Exception as e:  # noqa: BLE001 - voir ci-dessus
+            last_report = {"score": 0.0, "errors": [f"JSON/schema invalide : {e}"],
+                           "warnings": [], "metrics": {}}
             extra_messages = extra_messages + [
                 {"role": "user", "content": user_message}, {"role": "assistant", "content": content}
             ]

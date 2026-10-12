@@ -219,6 +219,7 @@ mesurer avant et après une modification d'alignement, avec eval/run_eval.py ;
 proposer un plan avant une modification importante ;
 modifier par petites étapes ;
 relancer les tests après chaque correction (python -m pytest tests/ -q) ;
+faire passer le linter avant de livrer (python -m ruff check .) ;
 signaler un écart entre une spec et la réalité du code plutôt que de forcer ;
 expliquer clairement les erreurs rencontrées ;
 préserver les fonctionnalités existantes.
@@ -300,7 +301,8 @@ Prérequis vérifiables d'un coup : python tools/check_env.py
 
 Commandes utiles
 
-python -m pytest tests/ -q                      tests (97)
+python -m pytest tests/ -q                      tests (140)
+python -m ruff check .                          linter (pip install -r requirements-dev.txt)
 python tools/check_env.py                       diagnostic environnement
 python lego.py "<prompt>"                       UN modèle complet, en une commande
 python lego.py "<prompt>" --taille petite --iterations 3

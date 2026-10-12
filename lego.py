@@ -23,8 +23,8 @@ import pipeline
 from src.bom import write_bom
 from src.dsl_schema import TAILLES
 from src.instructions import compose_all_steps, write_notice_html
-from src.pdf import write_pdf
 from src.llm_client import LLMCallError
+from src.pdf import write_pdf
 
 OUTPUTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "outputs")
 

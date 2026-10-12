@@ -7,6 +7,7 @@ navigateur n'est installe — la suite doit rester verte sur une machine nue.
 
 import os
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -118,7 +119,7 @@ def test_a_propos_parle_du_projet(modele, tmp_path):
 
 def test_html_vers_pdf_echoue_clairement_sans_navigateur(tmp_path, monkeypatch):
     """L'appelant doit pouvoir distinguer ce cas, pas recevoir un PDF vide."""
-    import src.pdf as pdf
+    from src import pdf
 
     monkeypatch.setattr(pdf.config, "NAVIGATEURS_PDF", [])
     monkeypatch.setattr(pdf.shutil, "which", lambda _: None)
@@ -134,7 +135,7 @@ def test_pdf_reellement_produit(modele, tmp_path):
     chemin = write_pdf(modele["etapes"], [""] * len(modele["etapes"]),
                        modele["placements"], str(tmp_path), "maison",
                        prompt="Une maison creuse.", rapport=modele["rapport"])
-    donnees = open(chemin, "rb").read()
+    donnees = Path(chemin).read_bytes()
     assert donnees.startswith(b"%PDF"), "ce n'est pas un PDF"
     assert donnees.rstrip().endswith(b"%%EOF"), "PDF tronque"
     assert len(donnees) > 2000

@@ -24,11 +24,11 @@ reviendrait a en jeter les trois quarts.
 import os
 import socket
 import subprocess
-import threading
 import sys
+import threading
 import time
 import traceback
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 sys.stderr.reconfigure(encoding="utf-8", errors="replace")
@@ -37,10 +37,10 @@ from sqlalchemy import select, text
 
 import config
 import pipeline
-from server.db import AGENT_TIMEOUT_S, Agent, Job, Session, Variante
+from server.db import AGENT_TIMEOUT_S, Job, Session, Variante
 from src.instructions import compose_all_steps, write_notice_html
-from src.pdf import write_pdf
 from src.llm_client import LLMCallError
+from src.pdf import write_pdf
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUTS_DIR = os.path.join(BASE_DIR, "outputs")
@@ -63,7 +63,8 @@ def version_du_code():
     """Commit git court, pour pouvoir expliquer plus tard un resultat ancien."""
     try:
         out = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=BASE_DIR,
-                             capture_output=True, text=True, timeout=10)
+                             capture_output=True, text=True, timeout=10,
+                             check=False)
         return out.stdout.strip() or None
     except (OSError, subprocess.SubprocessError):
         return None
@@ -102,14 +103,14 @@ def boucle_signe_de_vie(arret, intervalle=None, session_factory=None, beat=None)
         while True:
             try:
                 emettre(session)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - frontiere : voir ci-dessous
                 # Une base momentanement injoignable ne doit pas tuer le thread :
                 # l'agent continuerait a travailler en paraissant mort pour toujours.
                 log(f"signe de vie impossible : {e}")
                 try:
                     session.rollback()
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001, S110 - un rollback qui
+                    pass           # echoue ne doit pas masquer l'erreur d'origine
             if arret.wait(pause):
                 return
 
@@ -160,7 +161,7 @@ def reprendre_les_abandonnes(session, limite=None):
 
     Retourne le nombre de jobs repris.
     """
-    limite = limite or (datetime.now(timezone.utc) - timedelta(seconds=REPRISE_APRES_S))
+    limite = limite or (datetime.now(UTC) - timedelta(seconds=REPRISE_APRES_S))
     abandonnes = session.scalars(
         select(Job).where(Job.status == "en_cours", Job.claimed_at < limite)).all()
 
@@ -344,7 +345,7 @@ def finir(session, job):
 
     job.status = "terminee"
     job.etape = job.etape_fait = job.etape_total = None
-    job.finished_at = datetime.now(timezone.utc)
+    job.finished_at = datetime.now(UTC)
     session.add(job)
     session.commit()
     log(f"job {job.id} : termine")
@@ -363,13 +364,13 @@ def traiter_un(session):
             finir(session, job)
         else:
             produire_variantes(session, job)
-    except Exception as e:
-        log(f"job {job.id} ECHEC : {e}")
+    except Exception as e:  # noqa: BLE001 - un job qui echoue est enregistre
+        log(f"job {job.id} ECHEC : {e}")  # comme tel, il n'arrete pas l'agent
         traceback.print_exc()
         job.status = "echec"
         job.etape = job.etape_fait = job.etape_total = None
         job.error_message = str(e)[:500]
-        job.finished_at = datetime.now(timezone.utc)
+        job.finished_at = datetime.now(UTC)
         session.add(job)
         session.commit()
     return True
@@ -392,7 +393,7 @@ def main():
             raise SystemExit("\nAgent non demarre. Corrige le point ci-dessus, ou "
                              "--skip-env-check pour forcer.")
 
-    demarrage = datetime.now(timezone.utc)
+    demarrage = datetime.now(UTC)
     arret = threading.Event()
     # Thread dedie : le signe de vie doit continuer pendant un rendu Blender, qui
     # bloque la boucle principale plusieurs minutes.
@@ -413,7 +414,7 @@ def main():
                 log("arret demande")
                 arret.set()
                 return
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - voir ci-dessous
                 # La boucle ne doit jamais mourir sur une base momentanement absente.
                 log(f"erreur de boucle : {e}")
                 session.rollback()

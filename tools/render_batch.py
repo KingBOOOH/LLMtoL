@@ -36,8 +36,7 @@ def write_manifest(work_dirs, path):
     forme /c/Users/... de Git Bash.
     """
     with open(path, "w", encoding="utf-8") as f:
-        for d in work_dirs:
-            f.write(os.path.abspath(d) + "\n")
+        f.writelines(os.path.abspath(d) + "\n" for d in work_dirs)
     return path
 
 
@@ -59,6 +58,7 @@ def render(work_dirs, engine=None, samples=None, resolution=None):
     result = subprocess.run(
         [config.BLENDER_EXE, "--background", "--python", BLENDER_SCRIPT],
         env=env, capture_output=True, text=True, encoding="utf-8", errors="replace",
+        check=False,
     )
     duration = time.time() - t0
 
@@ -81,7 +81,7 @@ def assemble(work_dirs):
         env["PYTHONIOENCODING"] = "utf-8"
         result = subprocess.run([sys.executable, IMG_SCRIPT], env=env,
                                 capture_output=True, text=True,
-                                encoding="utf-8", errors="replace")
+                                encoding="utf-8", errors="replace", check=False)
         if result.returncode == 0:
             done += 1
     print(f"Planches assemblees : {done}/{len(work_dirs)}")
