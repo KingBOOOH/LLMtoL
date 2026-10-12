@@ -170,8 +170,13 @@ def render_all(work_dirs, run_dir, assemble_dirs=None, env_extra=None,
 
     print(f"\nRendu de {len(work_dirs)} modeles en un seul processus Blender...")
     t0 = time.time()
-    subprocess.run([config.BLENDER_EXE, "--background", "--python", BLENDER_SCRIPT],
-                   env=env, check=False)
+    # on_progress etait documente et ignore : la barre de progression de
+    # l'interface restait figee pendant toute la phase de rendu, la plus longue.
+    if on_progress is not None:
+        _rendre_en_suivant(env, on_progress)
+    else:
+        subprocess.run([config.BLENDER_EXE, "--background", "--python", BLENDER_SCRIPT],
+                       env=env, check=False)
     print(f"Rendus termines en {time.time() - t0:.0f}s")
 
     assembled = 0
