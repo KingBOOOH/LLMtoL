@@ -144,10 +144,22 @@ def test_pdf_reellement_produit(modele, tmp_path):
     assert os.path.isfile(tmp_path / "notice_pdf.html")
 
 
-def test_le_navigateur_est_lance_sans_memoire_partagee_du_conteneur():
-    """Dans un conteneur, /dev/shm vaut 64 Mo et Chromium s'y effondre EN SILENCE sur
-    une page lourde : une notice de 49 etapes passait, une de 111 ne produisait plus
-    rien. L'option le fait ecrire dans /tmp, et n'a aucun effet ailleurs."""
+def test_le_bac_a_sable_reste_actif_hors_root(monkeypatch):
+    monkeypatch.setattr(pdf.os, "name", "posix")
+    monkeypatch.setattr(pdf.os, "geteuid", lambda: 1000, raising=False)
+    assert pdf.arguments_de_bac_a_sable() == []
+
+
+def test_le_bac_a_sable_est_desactive_pour_le_conteneur(monkeypatch):
+    """Le cas reel : l'image tourne en root et le PDF ne sortait pas, apres neuf
+    minutes de rendus, sur un message que personne ne voyait."""
+    monkeypatch.setattr(pdf.os, "name", "posix")
+    monkeypatch.setattr(pdf.os, "geteuid", lambda: 0, raising=False)
+    assert pdf.arguments_de_bac_a_sable() == ["--no-sandbox"]
+
+
+def test_la_memoire_partagee_du_conteneur_est_contournee():
+    """Precaution : /dev/shm vaut 64 Mo dans un conteneur. Sans effet ailleurs."""
     source = Path(pdf.__file__).read_text(encoding="utf-8")
     assert "--disable-dev-shm-usage" in source
 

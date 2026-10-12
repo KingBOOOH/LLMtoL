@@ -222,9 +222,12 @@ avant, sinon UNIQUE(job_id, indice) sauterait). Apres cette suppression il FAUT
 session.refresh(job) : la session a expire_on_commit=False, donc job.variantes garderait
 les lignes supprimees et la premiere ecriture leverait "Instance has been deleted".
 
-PDF en conteneur : /dev/shm vaut 64 Mo par defaut et Chromium s'y effondre EN SILENCE
-sur une page lourde. Mesure : une notice de 49 etapes passait, une de 111 ne produisait
-plus rien. D'ou --disable-dev-shm-usage, applique partout (sans effet hors conteneur).
+PDF en conteneur : Chromium REFUSE de demarrer en root sans --no-sandbox ("Running as
+root without --no-sandbox is not supported"), et l'image tourne en root. L'option n'est
+ajoutee QUE dans ce cas : la desactiver sur un poste de travail affaiblirait reellement
+le navigateur pour un gain nul. --disable-dev-shm-usage est ajoute en precaution (64 Mo
+de /dev/shm par defaut dans un conteneur), pas comme correctif — la premiere hypothese
+designait /dev/shm, et elle etait fausse.
 Au passage, subprocess.TimeoutExpired n'est ni RuntimeError ni OSError : sans
 rattrapage elle echappait au except de agent.finir et faisait echouer tout le job pour
 un PDF manquant. Et la sortie du navigateur etait capturee puis jetee, d'ou une erreur
@@ -456,7 +459,7 @@ Prérequis vérifiables d'un coup : python tools/check_env.py
 
 Commandes utiles
 
-python -m pytest tests/ -q                      tests (252)
+python -m pytest tests/ -q                      tests (254)
 python -m ruff check .                          linter (pip install -r requirements-dev.txt)
 python tools/check_env.py                       diagnostic environnement
 python lego.py "<prompt>"                       UN modèle complet, en une commande

@@ -180,6 +180,24 @@ def construire_html(etapes, dossiers, placements, base, model_name="modele",
 </body></html>"""
 
 
+def arguments_de_bac_a_sable():
+    """--no-sandbox, mais UNIQUEMENT quand il est indispensable.
+
+    Chromium refuse de demarrer en root sans cette option : "Running as root without
+    --no-sandbox is not supported". C'est le cas dans le conteneur de generation, qui
+    tourne en root. Le message etait invisible jusqu'ici parce que la sortie du
+    navigateur etait capturee puis jetee : on voyait seulement "aucun PDF", apres neuf
+    minutes de rendus.
+
+    La condition est volontairement etroite. Desactiver le bac a sable sur un poste de
+    travail affaiblirait reellement le navigateur, pour un gain nul : hors root, il
+    demarre tres bien avec.
+    """
+    if os.name == "posix" and hasattr(os, "geteuid") and os.geteuid() == 0:
+        return ["--no-sandbox"]
+    return []
+
+
 def html_vers_pdf(html_path, pdf_path, timeout=180):
     """Imprime un fichier HTML local en PDF via un navigateur headless.
 
@@ -196,19 +214,19 @@ def html_vers_pdf(html_path, pdf_path, timeout=180):
     # --user-data-dir dans un dossier jetable : sans lui, une instance Edge deja
     # ouverte capte la commande et le mode headless ne produit rien.
     #
-    # --disable-dev-shm-usage : dans un conteneur, /dev/shm vaut 64 Mo par defaut, et
-    # Chromium s'y effondre en silence sur une page lourde. Mesure : une notice de 49
-    # etapes passait, une de 111 etapes ne produisait plus rien du tout. L'option le
-    # fait ecrire dans /tmp. Sans effet hors conteneur, d'ou son application partout
-    # plutot qu'une detection fragile.
+    # --disable-dev-shm-usage : dans un conteneur, /dev/shm vaut 64 Mo par defaut et
+    # Chromium peut s'y effondrer sur une page lourde. Precaution, sans effet ailleurs.
     with tempfile.TemporaryDirectory(prefix="llmtol_pdf_") as profil:
+        commande = [
+            navigateur, "--headless=new", "--disable-gpu", "--disable-dev-shm-usage",
+            f"--user-data-dir={profil}", "--no-pdf-header-footer",
+            *arguments_de_bac_a_sable(),
+            f"--print-to-pdf={os.path.abspath(pdf_path)}",
+            "file:///" + os.path.abspath(html_path).replace(os.sep, "/"),
+        ]
         try:
-            sortie = subprocess.run(
-                [navigateur, "--headless=new", "--disable-gpu",
-                 "--disable-dev-shm-usage", f"--user-data-dir={profil}",
-                 "--no-pdf-header-footer", f"--print-to-pdf={os.path.abspath(pdf_path)}",
-                 "file:///" + os.path.abspath(html_path).replace(os.sep, "/")],
-                capture_output=True, timeout=timeout, check=False)
+            sortie = subprocess.run(commande, capture_output=True, timeout=timeout,
+                                    check=False)
         except subprocess.TimeoutExpired as e:
             # Sans ce rattrapage, l'exception echappe au `except (RuntimeError, OSError)`
             # de l'appelant et fait echouer tout le job pour un PDF manquant, alors que
