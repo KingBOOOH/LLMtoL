@@ -42,6 +42,22 @@ LDU_PER_PLATE = 8
 
 IDENTITY = (1, 0, 0, 0, 1, 0, 0, 0, 1)
 ROTATE_90_Y = (0, 0, 1, 0, 1, 0, -1, 0, 0)
+ROTATE_180_Y = (-1, 0, 0, 0, 1, 0, 0, 0, -1)
+ROTATE_270_Y = (0, 0, -1, 0, 1, 0, 1, 0, 0)
+
+# (rotated, retournee) -> matrice. Les deux demi-tours n'etaient pas necessaires tant
+# que le catalogue n'avait que des pieces pleines, symetriques par demi-tour. Une pente
+# ne l'est pas : son sens de descente depend des quatre orientations.
+#
+# Correspondance avec la direction de descente en coordonnees internes, RELEVEE SUR UN
+# RENDU des quatre matrices et non calculee de tete (src.catalog.DIRECTION_RAMPE) :
+#   identite -> -y     90 deg -> -x     180 deg -> +y     270 deg -> +x
+MATRICES = {
+    (False, False): IDENTITY,
+    (True, False): ROTATE_90_Y,
+    (False, True): ROTATE_180_Y,
+    (True, True): ROTATE_270_Y,
+}
 
 
 def _placement_sort_key(p):
@@ -78,7 +94,7 @@ def _ldraw_line(placement):
     # Y interne (2e axe horizontal) -> Z LDraw.
     ldraw_z = round((placement.y + d / 2) * LDU_PER_STUD)
 
-    matrix = ROTATE_90_Y if placement.rotated else IDENTITY
+    matrix = MATRICES[(bool(placement.rotated), bool(placement.retournee))]
     matrix_str = " ".join(str(v) for v in matrix)
 
     return f"1 {ldraw_code} {ldraw_x} {ldraw_y} {ldraw_z} {matrix_str} {part.ldraw_id}.dat"

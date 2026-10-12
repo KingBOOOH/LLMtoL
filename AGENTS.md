@@ -62,7 +62,7 @@ src/dsl_schema.py    Schéma JSON du DSL + palette de 12 couleurs
 src/compiler.py      DSL -> grille de voxels numpy
 src/tiler.py         voxels -> pièces du catalogue, avec décalage des joints
 src/ldraw_writer.py  pièces -> model.ldr
-src/catalog.py       24 pièces + palette + correspondance BrickLink, toutes vérifiées
+src/catalog.py       26 pièces + palette + correspondance BrickLink, toutes vérifiées
 src/wanted_list.py   nomenclature -> liste d'achat BrickLink (XML)
 src/validator.py     contrôles géométriques -> report.json
 src/primitives.py    formes de référence analytiques + métrique IoU
@@ -155,6 +155,30 @@ Licence de la bibliotheque LDraw : CC BY 2.0 et CC BY 4.0 (CAlicense.txt, CAlice
 et CAreadme.txt, livres avec la bibliotheque ; chaque .dat du catalogue porte sa ligne
 "0 !LICENSE"). La redistribution est donc autorisee avec attribution, y compris dans une
 image Docker.
+
+Pentes au catalogue (3040b, 3039) : la regle "ne pas elargir le catalogue avant que la
+geometrie ne soit fiable" est LEVEE, la condition etant remplie (0/26 hors sol, IoU
+0.774, aucune collision). Une pente NE REMPLIT PAS sa boite englobante : w et d
+decrivent sa seule EMPREINTE HAUTE, la rampe deborde d'une rangee qui doit etre vide,
+dans la grille, et non deja reservee (deux pentes face a face se percuteraient dans le
+creux sans que le validateur le voie — il ne connait que l'empreinte haute).
+
+Geometrie VERIFIEE sur les sommets de 3040b.dat : X -10..10 (1 tenon), Z -30..10 (2
+tenons). L'extension en Z n'est PAS centree sur l'origine, la piece est centree sur son
+tenon HAUT. Avec w/d = empreinte haute, la formule de centrage de ldraw_writer
+s'applique sans changement ; avec l'emprise totale elle decalerait tout d'un demi-tenon.
+
+Quatre orientations (champ `retournee` en plus de `rotated`), sens de descente RELEVE SUR
+UN RENDU et non calcule : identite -> -y, 90 -> -x, 180 -> +y, 270 -> +x.
+
+MESURE de l'elargissement, sur les 161 designs archives (l'IoU ne peut pas bouger : il se
+calcule sur les voxels, que le pavage ne touche pas) :
+  pieces 96.87 -> 98.89 (+2.1%)   joints 0.2574 -> 0.2578   score 84.26 -> 84.22
+  648 pentes sur 79 designs       161/161 paves sans incident, 2 erreurs bloquantes
+  (les memes qu'avant)
+Verification visuelle : pyramide rendue avant/apres, gradins devenus rampes, orientations
+correctes sur les quatre faces. LeoCAD n'est pas installe, le controle est passe par un
+rendu Blender.
 
 Problèmes connus à surveiller
 
@@ -307,7 +331,10 @@ simuler ou mocker un résultat pour faire passer un test — si une étape ne pe
   testée, le dire ;
 élargir le DSL au-delà des huit opérations actuelles sans une mesure qui montre
   laquelle manque ;
-élargir le catalogue de pièces avant que la géométrie ne soit fiable ;
+élargir le catalogue sans vérifier chaque pièce contre la bibliothèque LDraw,
+  sans relever ses dimensions empiriquement, et sans mesurer l'effet sur les
+  designs archivés (la règle précédente — ne pas élargir avant que la géométrie
+  soit fiable — est levée, la condition étant remplie et mesurée) ;
 corriger un mauvais alignement en allongeant le system prompt sans mesurer d'abord ;
 supprimer un fichier sans validation ;
 ignorer les erreurs silencieusement ;
@@ -379,7 +406,7 @@ Prérequis vérifiables d'un coup : python tools/check_env.py
 
 Commandes utiles
 
-python -m pytest tests/ -q                      tests (191)
+python -m pytest tests/ -q                      tests (206)
 python -m ruff check .                          linter (pip install -r requirements-dev.txt)
 python tools/check_env.py                       diagnostic environnement
 python lego.py "<prompt>"                       UN modèle complet, en une commande

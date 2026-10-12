@@ -16,9 +16,14 @@ from collections import namedtuple
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from src.catalog import PARTS
+from src.catalog import DIRECTION_RAMPE, PARTS, est_une_pente
 
-Placement = namedtuple("Placement", ["part", "color_index", "x", "y", "z", "rotated"])
+# `retournee` ajoute le demi-tour : avec `rotated` elle donne les QUATRE orientations
+# dont les pentes ont besoin, la ou briques et plates n'en demandaient que deux. Valeur
+# par defaut, pour que les milliers d'appels existants a 6 arguments restent valides.
+# L'empreinte ne depend que de `rotated` : un demi-tour n'echange pas w et d.
+Placement = namedtuple("Placement", ["part", "color_index", "x", "y", "z", "rotated",
+                                     "retournee"], defaults=(False,))
 
 _SORTED_PARTS = sorted(PARTS, key=lambda p: -(p.w * p.d * p.h))
 
@@ -74,6 +79,48 @@ def _joint_penalty(prev_layer_edges, x, y, w, d, x_size, y_size):
     return penalty
 
 
+def _rampe_libre(voxels, covered, x, y, z, w, d, h, direction):
+    """La rampe d'une pente a-t-elle la place de descendre ?
+
+    Une pente n'est pas un pave : elle remplit sa rangee haute, puis deborde d'une
+    rangee en descendant. Cette rangee doit etre VIDE dans la grille — sinon la pente
+    retirerait de la matiere que le modele demande — et pas deja reclamee par une
+    autre piece, sinon deux pentes face a face se percuteraient dans le creux qui les
+    separe, ce qu'aucun controle en aval ne verrait (le validateur ne connait que
+    l'empreinte haute).
+
+    Elle doit aussi rester DANS la grille : laisser une rampe depasser reviendrait a
+    ignorer le bbox declare par le modele.
+    """
+    dx, dy = direction
+    x_size, y_size, _ = voxels.shape
+    # la rampe occupe la rangee adjacente, sur toute la largeur de l'empreinte haute
+    rx = x + dx * w if dx else x
+    ry = y + dy * d if dy else y
+    rw, rd = (1, d) if dx else (w, 1)
+    if rx < 0 or ry < 0 or rx + rw > x_size or ry + rd > y_size:
+        return False
+    region = voxels[rx:rx + rw, ry:ry + rd, z:z + h]
+    if np.any(region != 0):
+        return False
+    return not np.any(covered[rx:rx + rw, ry:ry + rd, z:z + h])
+
+
+def _rien_au_dessus(voxels, x, y, z, w, d, h):
+    """Une pente ne supporte rien : son dessus est incline. Elle n'est donc legitime
+    que la ou le modele s'arrete, c'est-a-dire sur une marche ou un bord de toit."""
+    z_size = voxels.shape[2]
+    if z + h >= z_size:
+        return True
+    return not np.any(voxels[x:x + w, y:y + d, z + h])
+
+
+def _pente_posable(voxels, covered, x, y, z, part, w, d, direction):
+    """Toutes les conditions de pose d'une pente, en un seul endroit."""
+    return (_rien_au_dessus(voxels, x, y, z, w, d, part.h)
+            and _rampe_libre(voxels, covered, x, y, z, w, d, part.h, direction))
+
+
 def _best_candidate(voxels, covered, x, y, z, color, remaining, prev_layer_edges, x_size, y_size):
     """Choisit la meilleure piece posable a (x, y, z), ou None si aucune ne tient.
 
@@ -91,18 +138,31 @@ def _best_candidate(voxels, covered, x, y, z, color, remaining, prev_layer_edges
     for part in _SORTED_PARTS:
         if part.h > remaining:
             continue
-        orientations = [(part.w, part.d, False)]
-        if part.w != part.d:
-            orientations.append((part.d, part.w, True))
-        for w, d, rotated in orientations:
+        pente = est_une_pente(part)
+        # Une pente a besoin des QUATRE orientations (sa rampe a un sens), la ou une
+        # piece pleine n'en distingue que deux.
+        if pente:
+            orientations = [(part.w, part.d, False, False), (part.d, part.w, True, False),
+                            (part.w, part.d, False, True), (part.d, part.w, True, True)]
+        else:
+            orientations = [(part.w, part.d, False, False)]
+            if part.w != part.d:
+                orientations.append((part.d, part.w, True, False))
+        for w, d, rotated, retournee in orientations:
             if not _fits(voxels, covered, x, y, z, w, d, part.h, color):
                 continue
+            if pente and not _pente_posable(voxels, covered, x, y, z, part, w, d,
+                                            DIRECTION_RAMPE[(rotated, retournee)]):
+                continue
             penalty = _joint_penalty(prev_layer_edges, x, y, w, d, x_size, y_size)
-            # la penalite prime sur le volume : eviter une fissure de maconnerie vaut
-            # mieux qu'une piece plus grande qui prolonge exactement le joint du dessous.
-            key = (penalty, -(w * d * part.h))
+            # Ordre : penalite de joint, PUIS pente, puis volume. La pente passe avant
+            # le volume parce que c'est tout l'interet de l'avoir au catalogue — sinon
+            # une brique plus longue la battrait systematiquement et aucun toit ne
+            # serait jamais incline. Elle reste apres la penalite de joint : un toit
+            # joli ne vaut pas un mur qui se fend.
+            key = (penalty, 0 if pente else 1, -(w * d * part.h))
             if best is None or key < best[0]:
-                best = (key, part, w, d, rotated)
+                best = (key, part, w, d, rotated, retournee)
     return best
 
 
@@ -134,9 +194,17 @@ def tile(voxels):
                         f"Aucune piece ne peut couvrir le voxel ({x},{y},{z}) — "
                         "ne devrait jamais arriver (fallback plate 1x1 garanti)."
                     )
-                _, part, w, d, rotated = best
+                _, part, w, d, rotated, retournee = best
                 covered[x:x + w, y:y + d, z:z + part.h] = True
-                placements.append(Placement(part, int(color), x, y, z, rotated))
+                if est_une_pente(part):
+                    # La rampe est marquee couverte bien qu'elle soit VIDE : rien ne
+                    # doit venir s'y loger, et surtout pas la rampe d'une autre pente.
+                    dx, dy = DIRECTION_RAMPE[(rotated, retournee)]
+                    rx, ry = (x + dx * w if dx else x), (y + dy * d if dy else y)
+                    rw, rd = (1, d) if dx else (w, 1)
+                    covered[rx:rx + rw, ry:ry + rd, z:z + part.h] = True
+                placements.append(Placement(part, int(color), x, y, z, rotated,
+                                            retournee))
                 xs, ys = _interior_edges(x, y, w, d, x_size, y_size)
                 for zz in range(z, min(z + part.h, z_size)):
                     edges_by_z[zz]["x"].update(xs)

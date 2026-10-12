@@ -238,6 +238,81 @@ C'est la seule matière pour comprendre plus tard *ce que* le modèle rate.
 
 La nomenclature n'est **pas** stockée : c'est une fonction pure de `design_json`.
 
+### Les pentes, et pourquoi une pente n'est pas un pavé
+
+Le catalogue est resté longtemps à 24 pièces sans la moindre pente : tous les toits
+étaient plats. `AGENTS.md` l'interdisait explicitement — « élargir le catalogue avant que
+la géométrie ne soit fiable ». La condition est maintenant remplie (0 génération hors
+sol sur 26, IoU global 0,774, aucune collision ni structure disjointe), donc la règle est
+levée, en le disant plutôt qu'en l'ignorant.
+
+Deux pièces ajoutées : `3040b` (Slope 45 2 x 1) et `3039` (Slope 45 2 x 2).
+
+**Une pente ne remplit pas sa boîte englobante.** C'est tout le problème : le pavage
+raisonnait en pavés pleins, et chaque voxel plein devait être couvert exactement une
+fois. La solution retenue garde cet invariant intact :
+
+> `w` et `d` décrivent la seule **empreinte haute** — les cases que la pièce remplit
+> vraiment. La rampe déborde d'une rangée supplémentaire, qui doit être **vide**.
+
+Trois conditions de pose, chacune avec son test :
+
+1. **rien au-dessus** — le dessus d'une pente est incliné, il ne porte rien ;
+2. **la rangée où descend la rampe est vide** dans la grille, et dans la grille : laisser
+   la rampe déborder reviendrait à ignorer le bbox déclaré ;
+3. **cette rangée n'est pas déjà réservée** — sinon deux pentes face à face se
+   percuteraient dans le creux qui les sépare, et rien ne le verrait : le validateur ne
+   connaît que l'empreinte haute.
+
+#### La géométrie, vérifiée et non supposée
+
+Les sommets de `3040b.dat`, sous-fichiers résolus, donnent : X −10..10 (1 tenon),
+Z −30..10 (2 tenons), Y −4..24. L'extension en Z **n'est pas centrée sur l'origine** :
+la pièce est centrée sur son tenon *haut*, et la rampe descend vers −Z.
+
+C'est exactement le genre de détail qui se paie cher. Prendre `w`/`d` pour l'emprise
+totale 1×2 aurait décalé chaque pente d'un demi-tenon, silencieusement. Avec l'empreinte
+haute — qui, elle, est centrée sur l'origine — la formule de centrage existante
+s'applique **sans aucun changement**.
+
+Une pente a besoin des quatre orientations, là où une pièce pleine n'en distingue que
+deux (un demi-tour ne change rien à un pavé). D'où le champ `retournee` à côté de
+`rotated`. La correspondance orientation → sens de descente a été **relevée sur un
+rendu** des quatre matrices, pas calculée de tête :
+
+| matrice | descente (coordonnées internes) |
+|---|---|
+| identité | −y |
+| 90° | −x |
+| 180° | +y |
+| 270° | +x |
+
+#### Mesure
+
+L'IoU se calcule sur la **grille de voxels**, que le pavage ne touche pas : élargir le
+catalogue ne peut pas le faire bouger, et 27 générations LLM n'auraient rien mesuré. Ce
+qui bouge, c'est le nombre de pièces, le décalage des joints et le score du validateur —
+tous calculables exactement, et gratuitement, sur les **161 designs déjà en archive**.
+
+| | avant | après |
+|---|---|---|
+| pièces (moyenne) | 96,87 | **98,89** (+2,1 %) |
+| références distinctes | 13,98 | 14,63 |
+| joints alignés | 0,2574 | **0,2578** (inchangé) |
+| score du validateur | 84,26 | **84,22** (−0,04) |
+| erreurs bloquantes | 2 | **2** (les mêmes) |
+| designs pavés sans incident | 161/161 | **161/161** |
+
+648 pentes posées, sur 79 designs des 161. Le score est stable (19 en hausse, 18 en
+baisse, 124 inchangés) et l'alignement des joints ne bouge pas : la règle de maçonnerie
+continue de primer, comme prévu — une pente passe avant le volume, mais après la pénalité
+de joint. Un toit joli ne vaut pas un mur qui se fend.
+
+La vérification visuelle a été faite sur une pyramide (19 pentes sur 32 pièces) rendue
+avant et après : la ziggourat en gradins devient une pyramide, rampes correctement
+orientées sur les quatre faces. `LeoCAD` n'étant pas installé, le contrôle est passé par
+un rendu Blender examiné directement — ce qui vaut mieux qu'un contrôle non fait.
+
 ### La liste d'achat
 
 La nomenclature donne des références **LDraw**. Pour acheter les pièces il faut les
@@ -246,14 +321,20 @@ classiques les deux numéros coïncident *le plus souvent*, et « le plus souven
 suffit pas.
 
 Cette prudence était justifiée. La correspondance a été vérifiée une par une sur
-bricklink.com — le catalogue de 24 pièces rend l'exercice fini — et **3 pièces sur 24
-portent un numéro différent des deux côtés** :
+bricklink.com — un catalogue de quelques dizaines de pièces rend l'exercice fini — et
+**4 pièces sur 26 portent un numéro différent des deux côtés** :
 
 | LDraw | BrickLink | pourquoi |
 |---|---|---|
 | `3023b` | `3023` | LDraw a renommé la pièce (mise à jour 2024-07), BrickLink non |
 | `3070b` | `3070` | BrickLink liste `3070b` comme numéro *alterné*, pas comme numéro principal |
 | `3069b` | `3069` | idem |
+| `3040b` | `3040` | ce numéro n'existe pas du tout chez BrickLink, pas même en alterné |
+
+La quatrième a été trouvée **par le test** qui verrouille les trois premières, en ajoutant
+les pentes : il a signalé `3040b` comme ayant « changé de numéro ». La correspondance a
+alors été établie par le nom et les dimensions (BrickLink `3040` « Slope 45 2 x 1 »,
+*Stud Dim.* 2 x 1 x 1), puis enregistrée.
 
 Les couleurs sont pires : les deux systèmes utilisent **les mêmes nombres pour des
 couleurs différentes**. Le code LDraw 8 est *Dark Grey*, le code BrickLink 8 est *Brown*.
@@ -585,7 +666,7 @@ pip install -r requirements-dev.txt
 
 python -m ruff check .        # linter + tri des imports
 python -m ruff check . --fix  # corrige ce qui est sûr
-python -m pytest tests/ -q    # 191 tests
+python -m pytest tests/ -q    # 206 tests
 ```
 
 Le linter garde le jeu de règles **par défaut** de `ruff` plutôt qu'une sélection
@@ -597,7 +678,7 @@ Les captures larges (`except Exception`) qui sont **volontaires** — les fronti
 échec ne doit pas tout emporter — sont marquées une par une par un `noqa` commenté,
 plutôt que désactivées globalement. Une négligence future sera donc signalée.
 
-191 tests, couvrant le schéma DSL, le compilateur, le pavage, le validateur, les
+206 tests, couvrant le schéma DSL, le compilateur, le pavage, le validateur, les
 primitives, la nomenclature, le découpage en étapes, la notice PDF, les règles de
 relance de l'API et la détection du piège LM Studio.
 

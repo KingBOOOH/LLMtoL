@@ -38,7 +38,15 @@ from src.wanted_list import (
 
 # Les trois seuls ecarts reels, releves un par un sur bricklink.com le 2026-10-12.
 # Ce sont EUX qui justifient de ne pas deduire le numero de boutique du numero LDraw.
-ECARTS_CONNUS = {"3023b": "3023", "3070b": "3070", "3069b": "3069"}
+ECARTS_CONNUS = {
+    "3023b": "3023",   # LDraw a renomme la piece (mise a jour 2024-07), BrickLink non
+    "3070b": "3070",   # BrickLink liste 3070b en numero ALTERNE
+    "3069b": "3069",   # idem
+    # Celui-ci a ete trouve PAR ce test, en ajoutant les pentes (US V2-05) : 3040b
+    # n'existe pas du tout chez BrickLink, pas meme en numero alterne. Correspondance
+    # etablie par le nom et les dimensions (BrickLink 3040 "Slope 45 2 x 1", 2 x 1 x 1).
+    "3040b": "3040",
+}
 
 
 # --- les correspondances sont completes et explicites -----------------------------
