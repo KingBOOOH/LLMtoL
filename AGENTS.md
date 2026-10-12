@@ -206,6 +206,33 @@ LEGO_NAVIGATEUR_PDF). src.catalog cherche la bibliotheque dans $LEGO_LDRAW_DIR d
 Ne JAMAIS faire d'un chemin de conteneur un defaut : ca marcherait en conteneur et
 casserait le poste de l'utilisateur.
 
+Avancement affiche a l'utilisateur : l'agent ecrit son etape en texte libre dans
+jobs.etape ; la traduction en identifiants stables se fait cote serveur, dans
+server/regles.PHASES_PAR_ETAPE, et l'interface n'interprete rien. Ajouter une etape sans
+la declarer la ferait retomber dans l'inconnu : un test relit les chaines ecrites dans
+agent.py et server/app.py et exige qu'elles soient toutes connues.
+
+L'interface n'a qu'UN panneau, qui suit ce sur quoi on a clique, sinon ce qui travaille.
+L'ordre precedent (ce qui attend un choix d'abord) avait un defaut vicieux : une demande
+en attente de choix masquait en permanence celle que l'agent traitait.
+
+agent.indices_a_produire rend produire_variantes REPRENABLE : seules les propositions
+sans design_json sont rejouees, en reutilisant leur indice (leur ligne est effacee
+avant, sinon UNIQUE(job_id, indice) sauterait). Apres cette suppression il FAUT
+session.refresh(job) : la session a expire_on_commit=False, donc job.variantes garderait
+les lignes supprimees et la premiere ecriture leverait "Instance has been deleted".
+
+PDF en conteneur : Chromium REFUSE de demarrer en root sans --no-sandbox ("Running as
+root without --no-sandbox is not supported"), et l'image tourne en root. L'option n'est
+ajoutee QUE dans ce cas : la desactiver sur un poste de travail affaiblirait reellement
+le navigateur pour un gain nul. --disable-dev-shm-usage est ajoute en precaution (64 Mo
+de /dev/shm par defaut dans un conteneur), pas comme correctif — la premiere hypothese
+designait /dev/shm, et elle etait fausse.
+Au passage, subprocess.TimeoutExpired n'est ni RuntimeError ni OSError : sans
+rattrapage elle echappait au except de agent.finir et faisait echouer tout le job pour
+un PDF manquant. Et la sortie du navigateur etait capturee puis jetee, d'ou une erreur
+"aucun PDF" qui ne disait jamais pourquoi.
+
 Problèmes connus à surveiller
 
 LM Studio réinjecte silencieusement le system prompt et le Structured Output configurés
@@ -432,7 +459,7 @@ Prérequis vérifiables d'un coup : python tools/check_env.py
 
 Commandes utiles
 
-python -m pytest tests/ -q                      tests (220)
+python -m pytest tests/ -q                      tests (259)
 python -m ruff check .                          linter (pip install -r requirements-dev.txt)
 python tools/check_env.py                       diagnostic environnement
 python lego.py "<prompt>"                       UN modèle complet, en une commande

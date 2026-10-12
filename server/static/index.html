@@ -100,6 +100,38 @@
              font-size: 13px; color: var(--doux); }
   .progres b { color: var(--texte); font-weight: 600; }
 
+  /* Liste d'etapes. Un texte d'etape seul ne disait pas OU on en est dans la
+     suite : on voyait "design" sans savoir s'il restait une minute ou dix. */
+  .etapes { list-style: none; margin: 14px 0 0; padding: 0; }
+  .etapes li {
+    display: flex; align-items: center; gap: 10px; padding: 5px 0;
+    font-size: 13.5px; color: var(--doux);
+  }
+  .etapes .puce {
+    width: 17px; height: 17px; flex: 0 0 17px; border-radius: 50%;
+    border: 2px solid var(--bord); display: grid; place-items: center;
+    font-size: 10px; line-height: 1; color: var(--fond);
+  }
+  .etapes li.faite { color: var(--texte); }
+  .etapes li.faite .puce { background: var(--ok); border-color: var(--ok); }
+  .etapes li.encours { color: var(--accent); font-weight: 600; }
+  .etapes li.encours .puce { border-color: var(--accent); }
+  /* Pulsation : la seule chose qui distingue "ca travaille" de "c'est fige". */
+  .etapes li.encours .puce::after {
+    content: ""; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--accent); animation: battement 1.1s ease-in-out infinite;
+  }
+  @keyframes battement { 50% { opacity: .25; } }
+  .etapes li.ratee { color: var(--erreur); }
+  .etapes li.ratee .puce { border-color: var(--erreur); color: var(--erreur); }
+  .etapes .compteur { margin-left: auto; font-variant-numeric: tabular-nums;
+                      font-size: 12.5px; color: var(--doux); font-weight: 400; }
+
+  /* Avancement compact, dans la ligne d'historique. */
+  .mini { margin-top: 5px; }
+  .mini .barre { height: 4px; margin: 0 0 3px; }
+  .mini .texte-etape { font-size: 12px; color: var(--accent); }
+
   .grille {
     display: grid; gap: 16px;
     grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));
@@ -173,6 +205,17 @@
   }
   .loupe img { max-width: min(760px, 100%); max-height: 85vh; border-radius: 10px; }
   .vide-doux { color: var(--doux); font-size: 14px; }
+
+  /* Mode d'emploi du fichier d'achat. Lacher un .xml sans dire ou il va, c'est
+     livrer un travail que personne ne sait utiliser. */
+  .mode-emploi { background: var(--carte-haut); border: 1px solid var(--bord);
+                 border-radius: var(--rayon); padding: 14px 16px; margin-top: 16px;
+                 font-size: 13.5px; }
+  .mode-emploi ol { margin: 8px 0 0; padding-left: 20px; color: var(--doux); }
+  .mode-emploi li { padding: 3px 0; }
+  .mode-emploi a { color: var(--accent); }
+  .mode-emploi .note { color: var(--doux); margin: 10px 0 0; font-size: 12.5px; }
+  .copie { color: var(--ok); font-size: 12.5px; margin-left: 8px; }
   @media (max-width: 560px) { .ligne > div { flex: 1 1 100%; } }
 </style>
 </head>
@@ -226,98 +269,170 @@
     </div>
   </section>
 
-  <!-- Job en cours : avancement, puis ecran de choix -->
-  <section v-if="actif" class="carte">
-    <h2>
-      {{ actif.status === 'a_choisir' ? 'Choisis ta variante' : 'Génération en cours' }}
-    </h2>
-    <p class="sous" style="margin-bottom:4px">{{ actif.prompt }}</p>
+  <!-- UN SEUL panneau, pour la demande que l'utilisateur regarde.
+       Avant, deux sections se faisaient concurrence et `actif` n'en designait
+       qu'une : une demande en attente de choix masquait celle qui travaillait, et
+       l'avancement d'une notice en cours de refabrication devenait invisible.
+       Maintenant : ce sur quoi on a clique, sinon ce qui travaille. -->
+  <section v-if="focus" class="carte">
+    <h2>{{ titreDuFocus }}</h2>
+    <p class="sous" style="margin-bottom:4px">{{ focus.prompt }}</p>
 
-    <div v-if="actif.status !== 'a_choisir'" style="margin-bottom:18px">
-      <div class="barre" :class="{ indetermine: pourcent(actif) === null }">
-        <i v-if="pourcent(actif) !== null" :style="{ width: pourcent(actif) + '%' }"></i>
+    <!-- Avancement : seulement quand quelque chose tourne vraiment. `a_choisir`
+         attend un clic, une barre y serait un mensonge. -->
+    <div v-if="enTravaux(focus)" style="margin-bottom:18px">
+      <div class="barre" :class="{ indetermine: pourcent(focus) === null }">
+        <i v-if="pourcent(focus) !== null" :style="{ width: pourcent(focus) + '%' }"></i>
         <i v-else></i>
       </div>
       <div class="progres">
-        <span>{{ libelleAvancement(actif) }}</span>
-        <span v-if="pourcent(actif) !== null"><b>{{ pourcent(actif) }}%</b></span>
+        <span>{{ libelleAvancement(focus) }}</span>
+        <span v-if="pourcent(focus) !== null"><b>{{ pourcent(focus) }}%</b></span>
+      </div>
+
+      <ul class="etapes">
+        <li v-for="e in etapesDe(focus)" :key="e.id" :class="e.etat">
+          <span class="puce">{{ e.etat === 'faite' ? '&check;' : (e.etat === 'ratee' ? '!' : '') }}</span>
+          <span>{{ e.libelle }}</span>
+          <span v-if="e.compteur" class="compteur">{{ e.compteur }}</span>
+        </li>
+      </ul>
+    </div>
+
+    <div v-if="focus.error_message" class="bandeau erreur">{{ focus.error_message }}</div>
+
+    <!-- Propositions supplementaires : proposee uniquement sur la demande qu'on
+         regarde, et seulement quand elle attend un choix. -->
+    <div v-if="focus.status === 'a_choisir' && focus.propositions_manquantes > 0"
+         class="bandeau alerte">
+      {{ focus.propositions_manquantes }} proposition(s) sur {{ focus.n_variantes }}
+      n'ont pas abouti &mdash; le modèle a produit quelque chose qui ne tenait pas
+      debout. Les autres sont intactes, tu peux choisir sans attendre.
+      <div class="ligne">
+        <div style="flex:0 0 auto">
+          <button @click="completer(focus)" :disabled="!statut.agent_actif || complement">
+            {{ complement ? 'Envoi…' : 'En générer ' + focus.propositions_manquantes + ' de plus' }}
+          </button>
+        </div>
       </div>
     </div>
 
-    <div v-if="actif.variantes.length" class="grille">
-      <div v-for="v in actif.variantes" :key="v.id"
+    <!-- Les propositions, tant qu'aucune n'est retenue. -->
+    <div v-if="!retenueDe(focus) && focus.variantes.length" class="grille">
+      <div v-for="v in focus.variantes" :key="v.id"
            class="variante" :class="{ retenue: v.is_chosen }">
         <img v-if="v.a_un_rendu" :src="'/api/variantes/' + v.id + '/render/iso'"
              :alt="'Variante ' + v.indice" @click="loupe = '/api/variantes/' + v.id + '/render/iso'">
         <div v-else class="vide">
-          {{ v.error_message ? 'echec' : 'rendu en cours...' }}
+          <template v-if="v.error_message">
+            Cette proposition n'a pas abouti.<br>
+            <small>{{ raisonCourte(v.error_message) }}</small>
+          </template>
+          <template v-else>rendu en cours&hellip;</template>
         </div>
         <div class="bas">
           <div class="chiffres">
             <span><b>{{ v.n_pieces ?? '—' }}</b> pièces</span>
             <span>score <b>{{ v.score ?? '—' }}</b></span>
           </div>
-          <button v-if="actif.status === 'a_choisir' && v.a_un_rendu"
+          <button v-if="focus.status === 'a_choisir' && v.a_un_rendu"
                   @click="choisir(v)" :disabled="choix">
             Choisir celle-ci
           </button>
         </div>
       </div>
     </div>
-    <p v-else class="vide-doux">Planification en cours, les variantes vont apparaître ici.</p>
-  </section>
+    <p v-else-if="!focus.variantes.length" class="vide-doux">
+      Planification en cours, les propositions vont apparaître ici.
+    </p>
 
-  <!-- Detail d'un job termine -->
-  <section v-if="ouvert" class="carte">
-    <h2>{{ ouvert.prompt }}</h2>
-    <div v-if="retenueDe(ouvert)" class="detail">
+    <!-- Les quatre vues, une fois une proposition retenue. -->
+    <div v-if="retenueDe(focus)" class="detail">
       <div v-for="vue in ['iso','top','front','right']" :key="vue">
-        <img :src="'/api/variantes/' + retenueDe(ouvert).id + '/render/' + vue"
-             :alt="vue" @click="loupe = '/api/variantes/' + retenueDe(ouvert).id + '/render/' + vue">
+        <img :src="'/api/variantes/' + retenueDe(focus).id + '/render/' + vue"
+             :alt="vue" @click="loupe = '/api/variantes/' + retenueDe(focus).id + '/render/' + vue">
         <p class="legende">{{ vue }}</p>
       </div>
     </div>
 
-    <ul v-if="avertissements(ouvert).length" class="avertissements">
-      <li v-for="(a, i) in avertissements(ouvert)" :key="i">{{ a }}</li>
+    <ul v-if="avertissements(focus).length" class="avertissements">
+      <li v-for="(a, i) in avertissements(focus)" :key="i">{{ a }}</li>
     </ul>
-    <p v-else-if="retenueDe(ouvert)" class="sous" style="margin-top:12px">
+    <p v-else-if="retenueDe(focus)" class="sous" style="margin-top:12px">
       Modèle d'un seul tenant, posé au sol, rien qui flotte.
     </p>
 
-    <div class="ligne">
-      <div style="flex:0 0 auto">
-        <button v-if="ouvert.a_un_pdf" @click="telecharger(ouvert)">Télécharger la notice PDF</button>
-        <span v-else-if="enCours(ouvert)" class="vide-doux">
-          Notice PDF en préparation<template v-if="ouvert.etape"> &mdash; {{ ouvert.etape }}</template>&hellip;
+    <div class="ligne" v-if="retenueDe(focus) || !enTravaux(focus)">
+      <div style="flex:0 0 auto" v-if="retenueDe(focus)">
+        <button v-if="focus.a_un_pdf" @click="telecharger(focus)">Télécharger la notice PDF</button>
+        <span v-else-if="enCours(focus)" class="vide-doux">
+          Notice PDF en préparation<template v-if="focus.etape"> &mdash; {{ focus.etape }}</template>&hellip;
         </span>
         <span v-else class="vide-doux">Pas de notice PDF pour ce modèle.</span>
       </div>
-      <div style="flex:0 0 auto">
-        <button class="discret" v-if="retenueDe(ouvert)"
-                @click="telechargerListeAchat(ouvert)">
-          Liste d'achat BrickLink
+      <div style="flex:0 0 auto" v-if="retenueDe(focus)">
+        <button class="discret" @click="achat = achat === focus.id ? null : focus.id">
+          Acheter les pièces&hellip;
         </button>
       </div>
-      <div style="flex:0 0 auto">
-        <button class="discret" v-if="!enCours(ouvert) && retenueDe(ouvert)"
-                @click="regenerer(ouvert)">
+      <div style="flex:0 0 auto" v-if="!enTravaux(focus) && retenueDe(focus)">
+        <button class="discret" @click="regenerer(focus)">
           Refaire la notice &mdash; aucune génération
         </button>
       </div>
-      <div style="flex:0 0 auto">
-        <button class="discret" v-if="!enCours(ouvert)" @click="ouvrirRelance(ouvert)">
+      <div style="flex:0 0 auto" v-if="!enTravaux(focus)">
+        <button class="discret" @click="ouvrirRelance(focus)">
           Relancer &mdash; nouvelles propositions
         </button>
       </div>
-      <div style="flex:0 0 auto">
+      <div style="flex:0 0 auto" v-if="ouvert">
         <button class="discret" @click="ouvert = null">Fermer</button>
       </div>
     </div>
 
+    <!-- Ou va ce fichier, et pourquoi ce n'est pas un panier. Question posee a
+         l'usage : BrickLink n'accepte un XML que dans une WANTED LIST, et son import
+         de panier attend un autre format. Surtout, un panier appartient a UN magasin
+         alors que les pieces viennent de dizaines de vendeurs : aucune URL ne peut
+         remplir un panier d'un coup. Le chemin reel passe par la wanted list. -->
+    <div v-if="achat === focus.id" class="mode-emploi">
+      <strong>Acheter les pièces</strong> &mdash; ça passe par une <em>wanted list</em>,
+      pas par le panier.
+      <p style="margin:8px 0 0">
+        <a href="https://www.bricklink.com/v2/wanted/upload.page" target="_blank"
+           rel="noopener">Ouvrir la page d'import BrickLink</a>
+        (il faut être connecté). Elle offre <strong>deux</strong> options, et il faut le
+        bon fichier pour chacune :
+      </p>
+      <ol>
+        <li>
+          <em>Upload a file from your computer</em> &mdash; le sélecteur n'accepte que
+          <code>.bsx .ldr .lxf .io</code>, donc le modèle lui-même :
+          <button class="discret" @click="telechargerModele(focus)">Télécharger le .ldr</button>
+          <br><small>BrickLink fait alors lui-même la correspondance des références.</small>
+        </li>
+        <li>
+          <em>Upload BrickLink XML format</em> &mdash; une zone de <strong>collage</strong>,
+          pas un fichier :
+          <button class="discret" @click="copierListeAchat(focus)">Copier le XML</button>
+          <span v-if="copie === focus.id" class="copie">copié</span>
+          <button class="discret" @click="telechargerListeAchat(focus)">ou l'enregistrer</button>
+          <br><small>Les références et les couleurs viennent de notre table vérifiée.</small>
+        </li>
+        <li>Une fois la liste importée, le bouton <em>Buy All</em> de BrickLink cherche
+            la combinaison de magasins qui la remplit, et peut choisir les vendeurs
+            automatiquement.</li>
+      </ol>
+      <p class="note">
+        Pourquoi pas un panier directement : un panier appartient à un seul magasin, et
+        un modèle de plusieurs centaines de pièces se répartit sur des dizaines de
+        vendeurs. C'est <em>Buy All</em> qui fait ce travail, à partir de la liste.
+      </p>
+    </div>
+
     <!-- Le cout est annonce AVANT de lancer : une relance mobilise le modele
          plusieurs minutes par proposition. -->
-    <div v-if="relance === ouvert.id" class="bandeau alerte" style="margin-top:16px">
+    <div v-if="relance === focus.id" class="bandeau alerte" style="margin-top:16px">
       Relancer va produire <b>{{ relanceN }} nouvelle(s) proposition(s)</b> à partir du
       même texte, soit <b>{{ relanceN }} génération(s) complète(s)</b> — comptez
       plusieurs minutes chacune. L'essai actuel est conservé, rien n'est écrasé.
@@ -351,7 +466,10 @@
       <div v-for="(j, i) in s.essais" :key="j.id" class="job"
            :class="{ rate: j.status === 'echec' }"
            @click="ouvert = (ouvert && ouvert.id === j.id) ? null : j">
-        <img v-if="j.variante_retenue" :src="'/api/variantes/' + j.variante_retenue + '/render/iso'" alt="">
+        <!-- `vignette` et non `variante_retenue` : avant le choix, ou quand la
+             premiere proposition a echoue, l'historique n'affichait qu'une case
+             grise alors que des rendus existaient. -->
+        <img v-if="j.vignette" :src="'/api/variantes/' + j.vignette + '/render/iso'" alt="">
         <div v-else class="miniature-vide"></div>
         <div class="infos">
           <p class="texte">{{ j.prompt }}</p>
@@ -360,6 +478,15 @@
             <template v-if="j.n_pieces"> &middot; {{ j.n_pieces }} pièces</template>
             <template v-if="j.error_message"> &middot; {{ j.error_message }}</template>
           </p>
+          <!-- Avancement visible pour CHAQUE demande, pas seulement celle du haut :
+               plusieurs peuvent etre en file en meme temps. -->
+          <div v-if="enTravaux(j)" class="mini">
+            <div class="barre" :class="{ indetermine: pourcent(j) === null }">
+              <i v-if="pourcent(j) !== null" :style="{ width: pourcent(j) + '%' }"></i>
+              <i v-else></i>
+            </div>
+            <span class="texte-etape">{{ libelleAvancement(j) }}</span>
+          </div>
         </div>
         <span v-if="s.essais.length > 1" class="essai">
           essai {{ s.essais.length - i }}/{{ s.essais.length }}
@@ -390,20 +517,34 @@ Vue.createApp({
       prompt: "", taille: "", nVariantes: 4,
       jobs: [], statut: { agent_actif: false, agent: null },
       ouvert: null, loupe: null, erreur: "", envoi: false, choix: false,
-      relance: null, relanceN: 4,
+      relance: null, relanceN: 4, complement: false, achat: null, copie: null,
     };
   },
   computed: {
-    // Le job en cours est le plus recent qui n'est ni termine ni en echec.
-    // Priorite a ce qui attend l'utilisateur, puis a ce qui travaille vraiment, et
-    // seulement ensuite a ce qui patiente. Sans cet ordre, un job en file masquait
-    // celui que l'agent etait en train de traiter, et l'interface semblait figee.
+    // La demande que l'interface suit d'elle-meme, faute de clic.
+    //
+    // CE QUI TRAVAILLE D'ABORD. L'ordre inverse — ce qui attend un choix d'abord —
+    // avait un defaut vicieux : une demande laissee en attente de choix masquait en
+    // permanence celle que l'agent etait en train de traiter, et on ne voyait plus
+    // rien avancer. Une demande qui attend un clic, elle, n'a rien d'urgent : elle
+    // reste accessible depuis l'historique.
     actif() {
-      const enCours = ["en_cours", "en_finition"];
-      return this.jobs.find(j => j.status === "a_choisir")
-          || this.jobs.find(j => enCours.includes(j.status))
+      const travaille = ["en_cours", "en_finition"];
+      return this.jobs.find(j => travaille.includes(j.status))
+          || this.jobs.find(j => j.status === "a_choisir")
           || this.jobs.find(j => j.status === "en_attente")
           || null;
+    },
+    // Ce que le panneau affiche : le clic de l'utilisateur prime toujours sur le
+    // choix automatique.
+    focus() { return this.ouvert || this.actif; },
+    titreDuFocus() {
+      const j = this.focus;
+      if (!j) return "";
+      if (j.status === "a_choisir") return "Choisis ta proposition";
+      if (this.enTravaux(j)) return "Génération en cours";
+      if (j.status === "echec") return "Cette demande n'a pas abouti";
+      return "Résultat";
     },
     // Regroupe les essais successifs d'une meme demande. racine_id ne descend que
     // d'un niveau (une relance de relance pointe la racine), donc un simple
@@ -437,7 +578,8 @@ Vue.createApp({
         ]);
         this.statut = statut;
         this.jobs = liste.jobs;
-        // Garde le detail ouvert a jour (le PDF arrive apres le choix).
+        // Garde la demande ouverte a jour : son etat change sous nos yeux (les
+        // propositions arrivent, puis la notice, puis le PDF).
         if (this.ouvert) {
           this.ouvert = this.jobs.find(j => j.id === this.ouvert.id) || null;
         }
@@ -464,7 +606,7 @@ Vue.createApp({
     async choisir(v) {
       this.choix = true;
       try {
-        await this.api(`/api/jobs/${this.actif.id}/choose`, {
+        await this.api(`/api/jobs/${this.focus.id}/choose`, {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ variante_id: v.id }),
         });
@@ -484,6 +626,25 @@ Vue.createApp({
     // cote de la notice, donc absent des modeles generes avant cette version : la
     // route renvoie alors un message qui dit quoi faire.
     telechargerListeAchat(j) { window.location = `/api/jobs/${j.id}/wanted-list`; },
+    // Le modele LDraw, deja produit a chaque generation : c'est le seul de nos
+    // fichiers que le selecteur de BrickLink accepte (.bsx .ldr .lxf .io).
+    telechargerModele(j) { window.location = `/api/jobs/${j.id}/ldr`; },
+    // Coller marche aussi bien que fournir le fichier sur la page d'import, et evite
+    // d'aller chercher un .xml dans le dossier des telechargements.
+    async copierListeAchat(j) {
+      try {
+        const r = await fetch(`/api/jobs/${j.id}/wanted-list`);
+        if (!r.ok) throw new Error("liste d'achat indisponible");
+        await navigator.clipboard.writeText(await r.text());
+        this.copie = j.id;
+        setTimeout(() => { if (this.copie === j.id) this.copie = null; }, 4000);
+      } catch (e) {
+        // Le presse-papiers peut etre refuse (contexte non securise, permission) :
+        // le telechargement reste disponible juste a cote, on le dit plutot que
+        // d'echouer en silence.
+        this.erreur = "Copie impossible (" + e.message + "). Utilise le téléchargement.";
+      }
+    },
 
     // Refait rendus, notice et PDF depuis le design deja en base : aucun appel au
     // modele, donc rien a confirmer.
@@ -513,6 +674,75 @@ Vue.createApp({
     // "en preparation" ne doit s'afficher que si quelque chose se prepare vraiment :
     // sur un job termine sans PDF, ce serait une attente qui ne finit jamais.
     enCours(j) { return EN_COURS.includes(j.status); },
+
+    // Suite d'etapes reellement traversees par une demande, avec l'etat de chacune.
+    // L'ordre vient du serveur (ordre_phases), qui est aussi celui qui traduit le
+    // texte libre de l'agent en identifiants : l'interface n'interprete rien.
+    //
+    // Les propositions sont detaillees une par une parce que c'est la partie longue,
+    // et que "proposition 2 sur 4" repond a la seule question qu'on se pose en
+    // attendant : combien de temps encore.
+    etapesDe(j) {
+      const ordre = j.ordre_phases || [];
+      const courant = ordre.indexOf(j.phase);
+      const fini = j.phase === 'fini';
+      const rate = j.phase === 'echec';
+      const n = j.n_variantes || 1;
+
+      const etat = (cle) => {
+        if (fini) return 'faite';
+        const i = ordre.indexOf(cle);
+        if (rate) return i <= courant ? 'ratee' : 'attente';
+        if (courant < 0) return 'attente';
+        if (i < courant) return 'faite';
+        if (i > courant) return 'attente';
+        return 'encours';
+      };
+      const compteur = (cle) => (etat(cle) === 'encours' && j.etape_total
+        ? `${j.etape_fait} / ${j.etape_total}` : '');
+
+      const sortie = [{ id: 'file', libelle: "Envoi au modèle", etat: etat('file') }];
+      if (sortie[0].etat === 'encours' && j.status === 'en_attente') {
+        const devant = this.placeDansLaFile(j);
+        sortie[0].compteur = devant ? `${devant} devant` : 'à son tour';
+      }
+      for (let k = 1; k <= n; k++) {
+        const base = etat('design');
+        let e = base;
+        if (base === 'encours') {
+          const fait = j.etape_fait || 1;
+          e = k < fait ? 'faite' : (k === fait ? 'encours' : 'attente');
+        }
+        sortie.push({ id: 'p' + k, libelle: `Proposition ${k} sur ${n}`, etat: e });
+      }
+      for (const [cle, libelle] of [
+        ['rendu_propositions', "Images des propositions"],
+        ['choix', "Ton choix"],
+        ['notice', "Nomenclature et étapes de montage"],
+        ['rendu_notice', "Images de la notice"],
+        ['pdf', "Notice PDF"],
+      ]) {
+        sortie.push({ id: cle, libelle, etat: etat(cle), compteur: compteur(cle) });
+      }
+      return sortie;
+    },
+    // Travaille-t-on vraiment sur cette demande ? `a_choisir` attend l'utilisateur,
+    // donc rien ne tourne : afficher une barre y serait un mensonge.
+    enTravaux(j) { return ["en_attente", "en_cours", "en_finition"].includes(j.status); },
+    // Les messages du validateur sont longs et listent chaque piece fautive. La
+    // premiere ligne porte la raison ; le reste est du detail.
+    raisonCourte(message) {
+      const premiere = String(message).split(/[\n.]/)[0].trim();
+      return premiere.length > 90 ? premiere.slice(0, 88) + '…' : premiere;
+    },
+    async completer(j) {
+      this.complement = true;
+      try {
+        await this.api(`/api/jobs/${j.id}/completer`, { method: "POST" });
+        await this.rafraichir();
+      } catch (e) { this.erreur = e.message; }
+      this.complement = false;
+    },
 
     // null = avancement inconnu : l'interface montre une barre indeterminee plutot
     // qu'un pourcentage invente.

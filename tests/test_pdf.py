@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from src import pdf
 from src.bom import build_bom
 from src.compiler import compile_design
 from src.instructions import split_steps
@@ -141,3 +142,42 @@ def test_pdf_reellement_produit(modele, tmp_path):
     assert len(donnees) > 2000
     # Le HTML intermediaire est conserve : il explique un PDF rate sans tout rejouer.
     assert os.path.isfile(tmp_path / "notice_pdf.html")
+
+
+def test_le_bac_a_sable_reste_actif_hors_root(monkeypatch):
+    monkeypatch.setattr(pdf.os, "name", "posix")
+    monkeypatch.setattr(pdf.os, "geteuid", lambda: 1000, raising=False)
+    assert pdf.arguments_de_bac_a_sable() == []
+
+
+def test_le_bac_a_sable_est_desactive_pour_le_conteneur(monkeypatch):
+    """Le cas reel : l'image tourne en root et le PDF ne sortait pas, apres neuf
+    minutes de rendus, sur un message que personne ne voyait."""
+    monkeypatch.setattr(pdf.os, "name", "posix")
+    monkeypatch.setattr(pdf.os, "geteuid", lambda: 0, raising=False)
+    assert pdf.arguments_de_bac_a_sable() == ["--no-sandbox"]
+
+
+def test_la_memoire_partagee_du_conteneur_est_contournee():
+    """Precaution : /dev/shm vaut 64 Mo dans un conteneur. Sans effet ailleurs."""
+    source = Path(pdf.__file__).read_text(encoding="utf-8")
+    assert "--disable-dev-shm-usage" in source
+
+
+def test_un_navigateur_qui_n_en_finit_pas_ne_fait_pas_echouer_le_job():
+    """TimeoutExpired n'est ni RuntimeError ni OSError : sans rattrapage, elle
+    echappait au `except` de l'appelant et faisait echouer tout le job pour un PDF
+    manquant, alors que le modele est bon."""
+    source = Path(pdf.__file__).read_text(encoding="utf-8")
+    corps = source[source.index("def html_vers_pdf("):source.index("def write_pdf(")]
+    assert "subprocess.TimeoutExpired" in corps
+    assert "raise RuntimeError" in corps
+
+
+def test_l_echec_du_navigateur_rapporte_sa_raison():
+    """La sortie du navigateur etait capturee puis jetee : l'erreur disait "aucun PDF"
+    sans jamais dire pourquoi, et il a fallu deviner."""
+    source = Path(pdf.__file__).read_text(encoding="utf-8")
+    corps = source[source.index("def html_vers_pdf("):source.index("def write_pdf(")]
+    assert "sortie.stderr" in corps
+    assert "sortie.returncode" in corps

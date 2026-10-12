@@ -180,6 +180,24 @@ def construire_html(etapes, dossiers, placements, base, model_name="modele",
 </body></html>"""
 
 
+def arguments_de_bac_a_sable():
+    """--no-sandbox, mais UNIQUEMENT quand il est indispensable.
+
+    Chromium refuse de demarrer en root sans cette option : "Running as root without
+    --no-sandbox is not supported". C'est le cas dans le conteneur de generation, qui
+    tourne en root. Le message etait invisible jusqu'ici parce que la sortie du
+    navigateur etait capturee puis jetee : on voyait seulement "aucun PDF", apres neuf
+    minutes de rendus.
+
+    La condition est volontairement etroite. Desactiver le bac a sable sur un poste de
+    travail affaiblirait reellement le navigateur, pour un gain nul : hors root, il
+    demarre tres bien avec.
+    """
+    if os.name == "posix" and hasattr(os, "geteuid") and os.geteuid() == 0:
+        return ["--no-sandbox"]
+    return []
+
+
 def html_vers_pdf(html_path, pdf_path, timeout=180):
     """Imprime un fichier HTML local en PDF via un navigateur headless.
 
@@ -195,15 +213,36 @@ def html_vers_pdf(html_path, pdf_path, timeout=180):
 
     # --user-data-dir dans un dossier jetable : sans lui, une instance Edge deja
     # ouverte capte la commande et le mode headless ne produit rien.
+    #
+    # --disable-dev-shm-usage : dans un conteneur, /dev/shm vaut 64 Mo par defaut et
+    # Chromium peut s'y effondrer sur une page lourde. Precaution, sans effet ailleurs.
     with tempfile.TemporaryDirectory(prefix="llmtol_pdf_") as profil:
-        subprocess.run(
-            [navigateur, "--headless=new", "--disable-gpu", f"--user-data-dir={profil}",
-             "--no-pdf-header-footer", f"--print-to-pdf={os.path.abspath(pdf_path)}",
-             "file:///" + os.path.abspath(html_path).replace(os.sep, "/")],
-            capture_output=True, timeout=timeout, check=False)
+        commande = [
+            navigateur, "--headless=new", "--disable-gpu", "--disable-dev-shm-usage",
+            f"--user-data-dir={profil}", "--no-pdf-header-footer",
+            *arguments_de_bac_a_sable(),
+            f"--print-to-pdf={os.path.abspath(pdf_path)}",
+            "file:///" + os.path.abspath(html_path).replace(os.sep, "/"),
+        ]
+        try:
+            sortie = subprocess.run(commande, capture_output=True, timeout=timeout,
+                                    check=False)
+        except subprocess.TimeoutExpired as e:
+            # Sans ce rattrapage, l'exception echappe au `except (RuntimeError, OSError)`
+            # de l'appelant et fait echouer tout le job pour un PDF manquant, alors que
+            # le modele, lui, est bon.
+            raise RuntimeError(
+                f"Le navigateur n'a pas fini en {timeout}s ({navigateur}). "
+                "Notice trop lourde ?") from e
 
     if not os.path.isfile(pdf_path) or os.path.getsize(pdf_path) == 0:
-        raise RuntimeError(f"Le navigateur n'a produit aucun PDF ({navigateur})")
+        # La sortie du navigateur etait capturee puis jetee : l'erreur disait seulement
+        # "aucun PDF", sans jamais dire pourquoi. Elle est maintenant rapportee.
+        details = (sortie.stderr or sortie.stdout or b"").decode("utf-8", "replace")
+        details = " / ".join(details.split()[-40:]) if details.strip() else "aucun message"
+        raise RuntimeError(
+            f"Le navigateur n'a produit aucun PDF ({navigateur}, code "
+            f"{sortie.returncode}) : {details[:400]}")
     return pdf_path
 
 

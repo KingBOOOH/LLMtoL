@@ -332,3 +332,60 @@ def test_la_phase_2_reconstruit_avant_de_composer():
     assert i_recons < i_notice, "la reconstruction doit preceder la notice"
     assert re.search(r"os\.makedirs\(iter_dir", corps), \
         "le dossier doit etre recree s'il a disparu"
+
+
+# --- Propositions supplementaires : ne reproduire que ce qui manque ----------------
+
+class _VarianteIndice:
+    def __init__(self, indice, design_json=None):
+        self.indice = indice
+        self.design_json = design_json
+
+
+def test_on_ne_reproduit_que_les_propositions_ratees():
+    """Refaire les reussies reviendrait a jeter plusieurs minutes de rendu Blender,
+    et a remplacer un resultat que l'utilisateur voyait deja."""
+    import agent as agent_mod
+
+    variantes = [_VarianteIndice(1), _VarianteIndice(2, design_json={"ok": True}),
+                 _VarianteIndice(3), _VarianteIndice(4, design_json={"ok": True})]
+    assert agent_mod.indices_a_produire(variantes, 4) == [1, 3]
+
+
+def test_un_job_neuf_produit_tout():
+    import agent as agent_mod
+
+    assert agent_mod.indices_a_produire([], 3) == [1, 2, 3]
+
+
+def test_plus_rien_a_produire_quand_tout_a_abouti():
+    import agent as agent_mod
+
+    variantes = [_VarianteIndice(i, design_json={"ok": True}) for i in (1, 2)]
+    assert agent_mod.indices_a_produire(variantes, 2) == []
+
+
+def test_les_indices_rates_sont_reutilises_et_leurs_lignes_effacees():
+    """Sans effacement prealable, reutiliser l'indice violerait
+    UNIQUE(job_id, indice) et ferait echouer le job au lieu de le completer."""
+    import re
+
+    import agent as agent_mod
+
+    source = Path(agent_mod.__file__).read_text(encoding="utf-8")
+    corps = source[source.index("def produire_variantes("):source.index("def finir(")]
+    assert re.search(r"session\.delete\(v\)", corps), \
+        "les lignes des tentatives ratees doivent etre effacees avant d'etre rejouees"
+    assert corps.index("session.delete(v)") < corps.index("Variante(job_id=job.id")
+
+
+def test_un_echec_total_ne_jette_pas_les_propositions_deja_acquises():
+    """Sur une demande de propositions supplementaires, les anciennes restent
+    valables meme si toutes les nouvelles echouent."""
+    import agent as agent_mod
+
+    source = Path(agent_mod.__file__).read_text(encoding="utf-8")
+    corps = source[source.index("def produire_variantes("):source.index("def finir(")]
+    i_garde = corps.index("if not acquises:")
+    i_echec = corps.index('raise RuntimeError("aucune variante n\'a abouti")')
+    assert i_garde < i_echec, "l'echec doit porter sur l'ensemble, pas sur le lot du jour"
