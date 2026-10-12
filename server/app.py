@@ -398,6 +398,35 @@ def wanted_list(job_id: str):
                         filename=f"wanted_list_{nom}.xml")
 
 
+@app.get("/api/jobs/{job_id}/ldr")
+def modele_ldr(job_id: str):
+    """Sert le model.ldr de la variante retenue.
+
+    C'est le format que le selecteur de fichier de BrickLink accepte (.bsx, .ldr,
+    .lxf, .io), la ou le XML de wanted list ne passe QUE par la zone de collage de la
+    meme page. Deux chemins, deux usages — et le fichier existe deja, produit a chaque
+    generation : il n'y a rien a calculer ici.
+
+    A SAVOIR : par cette voie, c'est BrickLink qui fait la correspondance entre
+    numeros LDraw et numeros de boutique, pas src/catalog.py. Notre table verifiee
+    (et l'avertissement sur les couleurs qui ne sont plus produites) ne s'applique
+    donc qu'au XML.
+    """
+    with Session() as s:
+        job = s.get(Job, job_id)
+        if job is None:
+            raise HTTPException(404, "Job introuvable.")
+        retenue = next((v for v in job.variantes if v.is_chosen), None)
+        if retenue is None or not retenue.render_dir:
+            raise HTTPException(404, "Aucune variante retenue pour ce job.")
+        relatif, nom = retenue.render_dir, (retenue.name or "modele")
+
+    chemin = _fichier_de_sortie(relatif, "model.ldr")
+    if not os.path.isfile(chemin):
+        raise HTTPException(404, "Le fichier du modèle est absent du disque.")
+    return FileResponse(chemin, media_type="text/plain", filename=f"{nom}.ldr")
+
+
 @app.get("/api/jobs/{job_id}/design")
 def design(job_id: str):
     """Le design DSL de la variante retenue : l'archive qui regenere tout le reste."""

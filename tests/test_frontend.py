@@ -354,3 +354,23 @@ def test_le_lien_externe_s_ouvre_sans_donner_la_main_a_la_page_cible():
     bloc = bloc[:400]
     assert 'target="_blank"' in bloc
     assert 'rel="noopener"' in bloc
+
+
+@sans_node
+def test_le_modele_ldr_est_telechargeable_depuis_l_interface():
+    """La page d'import de BrickLink a DEUX options, et son selecteur de fichier
+    n'accepte que .bsx .ldr .lxf .io : le XML n'y passe pas, seul le modele y passe.
+    Constate a l'usage, apres avoir propose le mauvais fichier."""
+    resultat = _executer("""
+      return typeof opt.methods.telechargerModele === 'function';
+    """)
+    assert resultat is True
+
+
+def test_le_mode_d_emploi_distingue_les_deux_options():
+    """Melanger les deux, c'est renvoyer l'utilisateur vers un selecteur qui refuse
+    son fichier — exactement ce qui s'est passe."""
+    html = INDEX.read_text(encoding="utf-8")
+    assert "Upload a file from your computer" in html
+    assert "Upload BrickLink XML format" in html
+    assert ".bsx .ldr .lxf .io" in html

@@ -396,20 +396,28 @@
          alors que les pieces viennent de dizaines de vendeurs : aucune URL ne peut
          remplir un panier d'un coup. Le chemin reel passe par la wanted list. -->
     <div v-if="achat === focus.id" class="mode-emploi">
-      <strong>Liste d'achat BrickLink</strong> &mdash; c'est une <em>wanted list</em>,
-      pas un panier.
+      <strong>Acheter les pièces</strong> &mdash; ça passe par une <em>wanted list</em>,
+      pas par le panier.
+      <p style="margin:8px 0 0">
+        <a href="https://www.bricklink.com/v2/wanted/upload.page" target="_blank"
+           rel="noopener">Ouvrir la page d'import BrickLink</a>
+        (il faut être connecté). Elle offre <strong>deux</strong> options, et il faut le
+        bon fichier pour chacune :
+      </p>
       <ol>
         <li>
-          <a href="https://www.bricklink.com/v2/wanted/upload.page" target="_blank"
-             rel="noopener">Ouvrir la page d'import BrickLink</a>
-          (il faut être connecté)
+          <em>Upload a file from your computer</em> &mdash; le sélecteur n'accepte que
+          <code>.bsx .ldr .lxf .io</code>, donc le modèle lui-même :
+          <button class="discret" @click="telechargerModele(focus)">Télécharger le .ldr</button>
+          <br><small>BrickLink fait alors lui-même la correspondance des références.</small>
         </li>
-        <li>Choisir l'option <em>Upload BrickLink XML format</em></li>
         <li>
-          Fournir le fichier, ou en coller le contenu :
-          <button class="discret" @click="telechargerListeAchat(focus)">Télécharger le .xml</button>
-          <button class="discret" @click="copierListeAchat(focus)">Copier le contenu</button>
+          <em>Upload BrickLink XML format</em> &mdash; une zone de <strong>collage</strong>,
+          pas un fichier :
+          <button class="discret" @click="copierListeAchat(focus)">Copier le XML</button>
           <span v-if="copie === focus.id" class="copie">copié</span>
+          <button class="discret" @click="telechargerListeAchat(focus)">ou l'enregistrer</button>
+          <br><small>Les références et les couleurs viennent de notre table vérifiée.</small>
         </li>
         <li>Une fois la liste importée, le bouton <em>Buy All</em> de BrickLink cherche
             la combinaison de magasins qui la remplit, et peut choisir les vendeurs
@@ -618,6 +626,9 @@ Vue.createApp({
     // cote de la notice, donc absent des modeles generes avant cette version : la
     // route renvoie alors un message qui dit quoi faire.
     telechargerListeAchat(j) { window.location = `/api/jobs/${j.id}/wanted-list`; },
+    // Le modele LDraw, deja produit a chaque generation : c'est le seul de nos
+    // fichiers que le selecteur de BrickLink accepte (.bsx .ldr .lxf .io).
+    telechargerModele(j) { window.location = `/api/jobs/${j.id}/ldr`; },
     // Coller marche aussi bien que fournir le fichier sur la page d'import, et evite
     // d'aller chercher un .xml dans le dossier des telechargements.
     async copierListeAchat(j) {
