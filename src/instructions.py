@@ -125,20 +125,33 @@ def compose_step_image(step_render, piece_images, out_path, largeur_encart=0.16)
     box_w, box_h = cell * colonnes, cell * lignes
     marge = int(W * 0.02)
 
-    encart = Image.new("RGB", (box_w, box_h), (255, 255, 255))
+    # Fond TRANSPARENT, et un bandeau blanc dessine par ligne, large exactement de son
+    # contenu. Un rectangle blanc unique laissait une zone vide des que le nombre de
+    # pieces n'etait pas un multiple du nombre de colonnes (5 ou 7 pieces sur 3
+    # colonnes) : ca se lisait comme une piece manquante. Centrer la derniere ligne
+    # deplacait le vide sans le supprimer.
+    encart = Image.new("RGBA", (box_w, box_h), (0, 0, 0, 0))
     dessin = ImageDraw.Draw(encart)
     try:
         police = ImageFont.truetype("arialbd.ttf", max(14, cell // 5))
     except OSError:
         police = ImageFont.load_default()
 
+    # Lignes alignees a DROITE : l'encart est colle au coin superieur droit, son bord
+    # droit reste donc rectiligne et le decrochage se voit a gauche, ou il est discret.
+    def _decalage(ligne):
+        return box_w - min(colonnes, n - ligne * colonnes) * cell
+
+    for ligne in range(lignes):
+        x = _decalage(ligne)
+        y = ligne * cell
+        largeur = min(colonnes, n - ligne * colonnes) * cell
+        dessin.rectangle([x, y, x + largeur - 1, y + cell - 1],
+                         fill=(255, 255, 255, 255), outline=(180, 180, 180), width=3)
+
     for i, (chemin, quantite) in enumerate(vignettes):
         ligne, col = divmod(i, colonnes)
-        # Derniere ligne incomplete : on centre ses elements plutot que de laisser un
-        # bloc blanc vide dans un coin, qui se lit comme une piece manquante.
-        dans_ligne = min(colonnes, n - ligne * colonnes)
-        decalage = (box_w - dans_ligne * cell) // 2
-        cx = decalage + col * cell
+        cx = _decalage(ligne) + col * cell
         cy = ligne * cell
 
         vign = Image.open(chemin).convert("RGB").resize((cell, cell), Image.LANCZOS)
@@ -153,8 +166,8 @@ def compose_step_image(step_render, piece_images, out_path, largeur_encart=0.16)
                          fill=(30, 30, 34))
         dessin.text((tx, ty), texte, fill=(255, 255, 255), font=police)
 
-    dessin.rectangle([0, 0, box_w - 1, box_h - 1], outline=(180, 180, 180), width=3)
-    base.paste(encart, (W - box_w - marge, marge))
+    # Colle avec son canal alpha : les zones sans piece laissent voir l'assemblage.
+    base.paste(encart, (W - box_w - marge, marge), encart)
     base.save(out_path)
     return True
 
