@@ -27,6 +27,7 @@ from sqlalchemy import (
     create_engine,
     func,
     select,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
@@ -60,6 +61,10 @@ class Job(Base):
     taille: Mapped[str | None] = mapped_column(Text)
     n_variantes: Mapped[int] = mapped_column(Integer, nullable=False, default=4)
     status: Mapped[str] = mapped_column(Text, nullable=False, default="en_attente")
+    # Essai d'origine quand ce job est une RELANCE du meme prompt. Toujours la racine,
+    # jamais l'essai precedent : voir db/init.sql.
+    origine_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("jobs.id", ondelete="SET NULL"))
     etape: Mapped[str | None] = mapped_column(Text)
     # Avancement chiffre de l'etape courante, nul quand il n'est pas mesurable.
     etape_fait: Mapped[int | None] = mapped_column(Integer)
@@ -136,3 +141,28 @@ def agent_actif(session):
     """
     limite = datetime.now(UTC) - timedelta(seconds=AGENT_TIMEOUT_S)
     return session.scalar(select(Agent.nom).where(Agent.seen_at >= limite).limit(1))
+
+
+def racine_de(job):
+    """Identifiant de la serie d'essais a laquelle ce job appartient.
+
+    Un job jamais relance est sa propre racine. Permet de regrouper l'historique
+    sans requete recursive, puisque origine_id ne descend que d'un niveau.
+    """
+    return job.origine_id or job.id
+
+
+def assurer_schema():
+    """Ajoute ce que db/init.sql ne peut plus ajouter, en idempotent.
+
+    init.sql n'est joue qu'a la CREATION du volume Postgres. Le rejouer sur une base
+    en service demanderait `docker compose down -v`, donc d'effacer les modeles deja
+    generes : les ajouts de colonnes se font donc ici. Pas d'Alembic — une colonne en
+    tout et pour tout ne justifie pas un outil de migration, ses fichiers de version
+    et son etat a garder coherent entre le conteneur et l'hote.
+    """
+    with engine.begin() as cx:
+        cx.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS origine_id uuid "
+                        "REFERENCES jobs(id) ON DELETE SET NULL"))
+        cx.execute(text("CREATE INDEX IF NOT EXISTS jobs_origine_idx "
+                        "ON jobs (origine_id)"))

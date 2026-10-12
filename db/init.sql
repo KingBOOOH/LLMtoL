@@ -30,6 +30,13 @@ CREATE TABLE jobs (
     etape_fait    int,
     etape_total   int,
 
+    -- Relance : nouvel essai sur LE MEME prompt, quand aucune proposition ne
+    -- convient. Pointe TOUJOURS vers l'essai d'origine, jamais vers l'essai
+    -- precedent : un seul niveau, donc regrouper les tentatives est un filtre et
+    -- non une remontee d'arbre. ON DELETE SET NULL parce que supprimer le premier
+    -- essai ne doit pas emporter les suivants, qui ont leurs propres sorties.
+    origine_id    uuid REFERENCES jobs(id) ON DELETE SET NULL,
+
     created_at    timestamptz NOT NULL DEFAULT now(),
     claimed_at    timestamptz,
     finished_at   timestamptz,
@@ -38,6 +45,7 @@ CREATE TABLE jobs (
 
 CREATE INDEX jobs_recent_idx ON jobs (created_at DESC);
 CREATE INDEX jobs_status_idx ON jobs (status);
+CREATE INDEX jobs_origine_idx ON jobs (origine_id);
 
 -- Une variante produite pour un job.
 CREATE TABLE variantes (

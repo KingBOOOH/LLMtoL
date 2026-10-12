@@ -121,7 +121,19 @@
   .chiffres { display: flex; gap: 12px; font-size: 13px; color: var(--doux); flex-wrap: wrap; }
   .chiffres b { color: var(--texte); font-weight: 600; }
 
-  .jobs { display: flex; flex-direction: column; gap: 10px; }
+  .jobs { display: flex; flex-direction: column; gap: 18px; }
+  /* Une demande et ses relances successives forment un bloc : sans ce
+     regroupement, trois essais du meme texte se lisaient comme trois demandes. */
+  .serie { display: flex; flex-direction: column; gap: 8px; }
+  .serie > .titre {
+    font-size: 12.5px; color: var(--doux); display: flex; gap: 8px;
+    align-items: baseline;
+  }
+  .serie > .titre b { color: var(--texte); font-weight: 600; }
+  .essai {
+    font-size: 11.5px; color: var(--doux); border: 1px solid var(--bord);
+    border-radius: 999px; padding: 2px 8px; white-space: nowrap;
+  }
   .job {
     display: flex; gap: 14px; align-items: center;
     background: var(--carte); border: 1px solid var(--bord);
@@ -282,7 +294,42 @@
         <span v-else class="vide-doux">Pas de notice PDF pour ce modèle.</span>
       </div>
       <div style="flex:0 0 auto">
+        <button class="discret" v-if="!enCours(ouvert) && retenueDe(ouvert)"
+                @click="regenerer(ouvert)">
+          Refaire la notice &mdash; aucune génération
+        </button>
+      </div>
+      <div style="flex:0 0 auto">
+        <button class="discret" v-if="!enCours(ouvert)" @click="ouvrirRelance(ouvert)">
+          Relancer &mdash; nouvelles propositions
+        </button>
+      </div>
+      <div style="flex:0 0 auto">
         <button class="discret" @click="ouvert = null">Fermer</button>
+      </div>
+    </div>
+
+    <!-- Le cout est annonce AVANT de lancer : une relance mobilise le modele
+         plusieurs minutes par proposition. -->
+    <div v-if="relance === ouvert.id" class="bandeau alerte" style="margin-top:16px">
+      Relancer va produire <b>{{ relanceN }} nouvelle(s) proposition(s)</b> à partir du
+      même texte, soit <b>{{ relanceN }} génération(s) complète(s)</b> — comptez
+      plusieurs minutes chacune. L'essai actuel est conservé, rien n'est écrasé.
+      <div class="ligne">
+        <div style="flex:0 0 140px">
+          <label for="rn">Propositions</label>
+          <select id="rn" v-model.number="relanceN">
+            <option v-for="k in [1,2,3,4,5,6]" :key="k" :value="k">{{ k }}</option>
+          </select>
+        </div>
+        <div style="flex:0 0 auto">
+          <button @click="confirmerRelance" :disabled="!statut.agent_actif">
+            Lancer {{ relanceN }} génération(s)
+          </button>
+        </div>
+        <div style="flex:0 0 auto">
+          <button class="discret" @click="relance = null">Annuler</button>
+        </div>
       </div>
     </div>
   </section>
@@ -291,7 +338,12 @@
   <section class="carte">
     <h2>Historique</h2>
     <div v-if="jobs.length" class="jobs">
-      <div v-for="j in jobs" :key="j.id" class="job" :class="{ rate: j.status === 'echec' }"
+     <div v-for="s in series" :key="s.cle" class="serie">
+      <p class="titre" v-if="s.essais.length > 1">
+        <b>{{ s.essais.length }} essais</b> sur la même demande
+      </p>
+      <div v-for="(j, i) in s.essais" :key="j.id" class="job"
+           :class="{ rate: j.status === 'echec' }"
            @click="ouvert = (ouvert && ouvert.id === j.id) ? null : j">
         <img v-if="j.variante_retenue" :src="'/api/variantes/' + j.variante_retenue + '/render/iso'" alt="">
         <div v-else class="miniature-vide"></div>
@@ -303,9 +355,13 @@
             <template v-if="j.error_message"> &middot; {{ j.error_message }}</template>
           </p>
         </div>
+        <span v-if="s.essais.length > 1" class="essai">
+          essai {{ s.essais.length - i }}/{{ s.essais.length }}
+        </span>
         <span class="etat" :class="classeEtat(j.status)">{{ libelle(j.status) }}</span>
         <button class="discret" @click.stop="supprimer(j)">Supprimer</button>
       </div>
+     </div>
     </div>
     <p v-else class="vide-doux">Rien encore. Lance une première génération ci-dessus.</p>
   </section>
@@ -328,6 +384,7 @@ Vue.createApp({
       prompt: "", taille: "", nVariantes: 4,
       jobs: [], statut: { agent_actif: false, agent: null },
       ouvert: null, loupe: null, erreur: "", envoi: false, choix: false,
+      relance: null, relanceN: 4,
     };
   },
   computed: {
@@ -341,6 +398,20 @@ Vue.createApp({
           || this.jobs.find(j => enCours.includes(j.status))
           || this.jobs.find(j => j.status === "en_attente")
           || null;
+    },
+    // Regroupe les essais successifs d'une meme demande. racine_id ne descend que
+    // d'un niveau (une relance de relance pointe la racine), donc un simple
+    // regroupement suffit — pas d'arbre a remonter.
+    series() {
+      const par = new Map();
+      for (const j of this.jobs) {
+        const cle = j.racine_id || j.id;
+        if (!par.has(cle)) par.set(cle, []);
+        par.get(cle).push(j);
+      }
+      // L'API renvoie du plus recent au plus ancien : chaque serie garde cet ordre,
+      // et les series sont ordonnees par leur essai le plus recent.
+      return [...par.entries()].map(([cle, essais]) => ({ cle, essais }));
     },
   },
   methods: {
@@ -403,6 +474,31 @@ Vue.createApp({
       } catch (e) { this.erreur = e.message; }
     },
     telecharger(j) { window.location = `/api/jobs/${j.id}/pdf`; },
+
+    // Refait rendus, notice et PDF depuis le design deja en base : aucun appel au
+    // modele, donc rien a confirmer.
+    async regenerer(j) {
+      try {
+        await this.api(`/api/jobs/${j.id}/regenerer`, { method: "POST" });
+        await this.rafraichir();
+      } catch (e) { this.erreur = e.message; }
+    },
+    ouvrirRelance(j) {
+      this.relance = this.relance === j.id ? null : j.id;
+      this.relanceN = j.n_variantes || 4;
+    },
+    async confirmerRelance() {
+      const id = this.relance;
+      try {
+        await this.api(`/api/jobs/${id}/relancer`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ n_variantes: this.relanceN }),
+        });
+        this.relance = null;
+        this.ouvert = null;
+        await this.rafraichir();
+      } catch (e) { this.erreur = e.message; }
+    },
     retenueDe(j) { return (j.variantes || []).find(v => v.is_chosen) || null; },
     // "en preparation" ne doit s'afficher que si quelque chose se prepare vraiment :
     // sur un job termine sans PDF, ce serait une attente qui ne finit jamais.

@@ -37,7 +37,7 @@ from sqlalchemy import select, text
 
 import config
 import pipeline
-from server.db import AGENT_TIMEOUT_S, Job, Session, Variante
+from server.db import AGENT_TIMEOUT_S, Job, Session, Variante, assurer_schema
 from src.instructions import compose_all_steps, write_notice_html
 from src.llm_client import LLMCallError
 from src.pdf import write_pdf
@@ -267,14 +267,42 @@ def produire_variantes(session, job):
     log(f"job {job.id} : {len(dossiers)} variante(s) pretes, en attente du choix")
 
 
+def chemins_manquants(iter_dir):
+    """Ce qui doit etre reconstruit sur disque avant la phase 2.
+
+    Une REGENERATION repart du seul `design_json` : le dossier de sortie peut avoir
+    ete efface entre-temps (nettoyage, changement de machine, variante rejetee puis
+    retenue). Tout en descend de facon deterministe, encore faut-il savoir ce qui
+    manque plutot que de tout refaire a chaque fois — le rendu des quatre vues coute
+    plusieurs minutes.
+    """
+    return {
+        "ldr": not os.path.isfile(os.path.join(iter_dir, "model.ldr")),
+        # render_iso.png sert de couverture au PDF : son absence suffit a declarer
+        # les rendus du modele a refaire.
+        "rendus": not os.path.isfile(os.path.join(iter_dir, "render_iso.png")),
+    }
+
+
 def finir(session, job):
-    """Phase 2 : nomenclature, etapes et notice de la variante retenue uniquement."""
+    """Phase 2 : nomenclature, etapes et notice de la variante retenue uniquement.
+
+    Sert aussi de chemin de REGENERATION : l'API remet un job termine en
+    `en_finition` et tout est rejoue depuis `design_json`, sans aucun appel LLM.
+    """
     retenue = session.scalar(
         select(Variante).where(Variante.job_id == job.id, Variante.is_chosen.is_(True)))
     if retenue is None:
         raise RuntimeError("aucune variante retenue")
 
+    if not retenue.render_dir:
+        # Variante dont les rendus avaient ete effaces : on lui redonne un dossier
+        # plutot que de refuser la regeneration.
+        retenue.render_dir = f"job_{job.id}/variante_{retenue.indice:02d}"
+        session.add(retenue)
+        session.commit()
     iter_dir = os.path.join(OUTPUTS_DIR, retenue.render_dir)
+    os.makedirs(iter_dir, exist_ok=True)
     log_path = os.path.join(iter_dir, "log.txt")
     run_dir = os.path.dirname(iter_dir)
 
@@ -286,6 +314,20 @@ def finir(session, job):
     # Revalidation plutot que stockage du rapport : la chaine est deterministe, donc
     # recalculer coute quelques millisecondes et evite une colonne de donnee derivee.
     rapport = validate(voxels, placements, retenue.design_json)
+
+    manquant = chemins_manquants(iter_dir)
+    if manquant["ldr"]:
+        from src.ldraw_writer import write_ldr
+        write_ldr(placements, os.path.join(iter_dir, "model.ldr"),
+                  retenue.name or "modele")
+        log(f"job {job.id} : model.ldr reconstruit depuis design_json")
+    if manquant["rendus"]:
+        # Lot a part : les quatre vues du modele veulent le cadrage par defaut, les
+        # etapes un cadrage plus serre et la seule vue isometrique.
+        _etat(session, job, "rendu du modele", fait=0, total=1)
+        pipeline.render_all(
+            [iter_dir], run_dir, manifest_name="_manifest_modele.txt",
+            on_progress=lambda k, n: _etat(session, job, "rendu du modele", k, n))
 
     _etat(session, job, "nomenclature et etapes")
     etape_dirs, piece_models, etapes = pipeline.preparer_notice(
@@ -392,6 +434,10 @@ def main():
             # cubes a n'importe quelle demande.
             raise SystemExit("\nAgent non demarre. Corrige le point ci-dessus, ou "
                              "--skip-env-check pour forcer.")
+
+    # L'agent peut demarrer avant l'API : il met le schema a jour lui aussi plutot
+    # que d'echouer sur une colonne absente.
+    assurer_schema()
 
     demarrage = datetime.now(UTC)
     arret = threading.Event()

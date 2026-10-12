@@ -8,13 +8,15 @@ toute facon, LM Studio etant mono-modele sur CPU.
 """
 
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import Body, FastAPI, HTTPException
 from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 
-from server.db import Job, Session, Variante, agent_actif
+from server.db import Job, Session, Variante, agent_actif, assurer_schema, racine_de
+from server.regles import refus_de_regeneration, refus_de_relance, verifier_n_variantes
 
 # Racine des sorties, montee en LECTURE SEULE depuis l'hote (voir docker-compose).
 OUTPUTS_ROOT = os.path.abspath(os.environ.get("OUTPUTS_ROOT", "/outputs"))
@@ -34,7 +36,20 @@ FICHIER_DE_VUE = {"iso": "render_iso.png", "top": "render_top.png",
 # ne peut pas tourner dans le conteneur.
 TAILLES = {"petite", "moyenne", "grande"}
 
-app = FastAPI(title="LLMtoL", docs_url="/api/docs", openapi_url="/api/openapi.json")
+@asynccontextmanager
+async def lifespan(_app):
+    try:
+        assurer_schema()
+    except Exception as e:  # noqa: BLE001 - frontiere de demarrage
+        # Une base momentanement absente ne doit pas empecher l'API de demarrer :
+        # elle repond deja en erreur requete par requete dans ce cas. Mais on le DIT,
+        # sinon une colonne manquante se manifesterait plus tard par un 500 opaque.
+        print(f"[schema] mise a jour impossible : {e}", flush=True)
+    yield
+
+
+app = FastAPI(title="LLMtoL", docs_url="/api/docs", openapi_url="/api/openapi.json",
+              lifespan=lifespan)
 
 
 def _variante_json(v):
@@ -66,6 +81,11 @@ def _job_json(job, avec_variantes=True):
     data = {
         "id": str(job.id),
         "prompt": job.prompt,
+        # La racine regroupe les essais successifs d'une meme demande.
+        # L'interface compte les essais elle-meme : elle a deja la liste
+        # complete sous la main, inutile de la lui renvoyer numerotee.
+        "origine_id": str(job.origine_id) if job.origine_id else None,
+        "racine_id": str(racine_de(job)),
         "taille": job.taille,
         "n_variantes": job.n_variantes,
         "status": job.status,
@@ -111,12 +131,9 @@ def creer_job(payload: dict = Body(...)):
     if taille is not None and taille not in TAILLES:
         raise HTTPException(400, f"Taille inconnue. Valeurs possibles : {sorted(TAILLES)}")
 
-    try:
-        n = int(payload.get("n_variantes", 4))
-    except (TypeError, ValueError):
-        raise HTTPException(400, "n_variantes doit être un entier.")
-    if not 1 <= n <= 6:
-        raise HTTPException(400, "n_variantes doit être entre 1 et 6.")
+    n, erreur = verifier_n_variantes(payload.get("n_variantes"), 4)
+    if erreur:
+        raise HTTPException(400, erreur)
 
     with Session() as s:
         if agent_actif(s) is None:
@@ -185,6 +202,64 @@ def choisir(job_id: str, payload: dict = Body(...)):
                 v.pdf = None
         job.status = "en_finition"
         job.etape = "notice et nomenclature"
+        s.commit()
+        return _job_json(job)
+
+
+@app.post("/api/jobs/{job_id}/relancer", status_code=201)
+def relancer(job_id: str, payload: dict = Body(default={})):
+    """Nouvel essai sur LE MEME prompt. Coute N generations.
+
+    Cree un job distinct, rattache a l'essai d'origine : l'ancien n'est jamais
+    ecrase, ses sorties vivent dans son propre dossier `outputs/job_<id>/`. Le
+    rattachement n'est pas qu'un confort d'affichage — il rend enfin mesurable la
+    VARIANCE du modele sur une demande donnee, ce que le projet n'a jamais su faire.
+    """
+    with Session() as s:
+        job = s.get(Job, job_id)
+        if job is None:
+            raise HTTPException(404, "Job introuvable.")
+        refus = refus_de_relance(job)
+        if refus:
+            raise HTTPException(409, refus)
+        if agent_actif(s) is None:
+            raise HTTPException(
+                503, "Aucun agent de génération actif. Lance `python agent.py` sur la "
+                     "machine où sont installés Blender et LM Studio.")
+
+        n, erreur = verifier_n_variantes(payload.get("n_variantes"), job.n_variantes)
+        if erreur:
+            raise HTTPException(400, erreur)
+        nouveau = Job(prompt=job.prompt, taille=job.taille, n_variantes=n,
+                      # Toujours la racine : une relance de relance reste au meme
+                      # niveau, sinon regrouper demanderait de remonter un arbre.
+                      origine_id=racine_de(job))
+        s.add(nouveau)
+        s.commit()
+        return _job_json(nouveau)
+
+
+@app.post("/api/jobs/{job_id}/regenerer")
+def regenerer(job_id: str):
+    """Refait rendus, notice et PDF depuis `design_json`. AUCUN appel LLM.
+
+    Toute la chaine en aval du design est deterministe : remettre le job en
+    `en_finition` suffit a la rejouer entierement. Utile apres un changement de
+    moteur de rendu ou de mise en page de notice, ou si un fichier a ete efface.
+    L'agent reconstruit ce qui manque sur disque (voir agent.chemins_manquants).
+    """
+    with Session() as s:
+        job = s.get(Job, job_id)
+        if job is None:
+            raise HTTPException(404, "Job introuvable.")
+        refus = refus_de_regeneration(job)
+        if refus:
+            raise HTTPException(409, refus)
+
+        job.status = "en_finition"
+        job.etape = "regeneration"
+        job.error_message = None
+        job.finished_at = None
         s.commit()
         return _job_json(job)
 
