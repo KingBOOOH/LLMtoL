@@ -7,6 +7,12 @@ couleur), puis pave en vraies pieces par src/tiler.py.
 PALETTE_NAMES est notre vocabulaire DSL interne (noms lisibles, pas des codes LDraw).
 La correspondance nom -> code/RGB LDraw officiels est dans src/catalog.py (PALETTE),
 verifiee contre LDConfig.ldr par verify_palette() — ne pas coder de codes LDraw ici.
+
+Le schema est CONSTRUIT (build_schema) plutot que fige, pour pouvoir resserrer les
+bornes du bbox par requete : c'est ainsi qu'on borne la taille d'un modele. Demander
+"fais environ 200 pieces" dans le prompt ne marche pas — la chaine v0 l'a prouve
+("grille 10x10" -> 49 cubes). Un schema resserre, lui, rend le modele INCAPABLE
+d'emettre une coordonnee hors bornes : c'est une garantie, pas une consigne.
 """
 
 PALETTE_NAMES = [
@@ -18,7 +24,18 @@ PALETTE_NAMES = [
 # bbox borne max en v1 (section 4.3) : [X, Y, Z] = [48, 48, 60]
 BBOX_MAX = [48, 48, 60]
 
-OPS = ["box", "carve", "column", "layer", "mirror", "translate_group"]
+# Tailles nommees exposees a l'utilisateur. Valeurs de depart, a ajuster une fois le
+# nombre de pieces reellement obtenu mesure pour chacune (cf. README).
+TAILLES = {
+    "petite": [16, 16, 20],
+    "moyenne": [28, 28, 36],
+    "grande": BBOX_MAX,
+}
+
+OPS = ["box", "carve", "column", "layer", "cylinder", "sphere", "mirror",
+       "translate_group"]
+
+COLOR = {"type": "string", "enum": PALETTE_NAMES}
 
 
 def _xyz_schema(maxima, minimum=0):
@@ -42,149 +59,228 @@ def _xyz_schema(maxima, minimum=0):
     }
 
 
-POINT = _xyz_schema(BBOX_MAX)
-# delta autorise des valeurs negatives (translation dans les deux sens) ; le clamp
-# reel contre le bbox de CE design a lieu au compile (tache 1.4), pas ici.
-DELTA = {
-    "type": "array",
-    "prefixItems": [
-        {"type": "integer", "minimum": -BBOX_MAX[0], "maximum": BBOX_MAX[0]},
-        {"type": "integer", "minimum": -BBOX_MAX[1], "maximum": BBOX_MAX[1]},
-        {"type": "integer", "minimum": -BBOX_MAX[2], "maximum": BBOX_MAX[2]},
-    ],
-    "minItems": 3,
-    "maxItems": 3,
-}
+def resoudre_bornes(taille=None, bbox_max=None):
+    """Retourne les bornes [X, Y, Z] a appliquer. bbox_max l'emporte sur taille.
 
-COLOR = {"type": "string", "enum": PALETTE_NAMES}
+    Leve ValueError sur une taille inconnue ou une borne aberrante : mieux vaut un
+    echec net qu'un modele silencieusement genere a la mauvaise echelle.
+    """
+    if bbox_max is not None:
+        bornes = list(bbox_max)
+        if len(bornes) != 3 or any(not isinstance(v, int) or v < 1 for v in bornes):
+            raise ValueError(f"bbox_max doit etre 3 entiers >= 1, recu {bbox_max!r}")
+        if any(v > m for v, m in zip(bornes, BBOX_MAX)):
+            raise ValueError(f"bbox_max {bornes} depasse le maximum global {BBOX_MAX}")
+        return bornes
+    if taille is None:
+        return list(BBOX_MAX)
+    if taille not in TAILLES:
+        raise ValueError(f"taille inconnue {taille!r}, attendu une de {sorted(TAILLES)}")
+    return list(TAILLES[taille])
 
-BBOX_SCHEMA = {
-    "type": "array",
-    "prefixItems": [
-        {"type": "integer", "minimum": 1, "maximum": BBOX_MAX[0]},
-        {"type": "integer", "minimum": 1, "maximum": BBOX_MAX[1]},
-        {"type": "integer", "minimum": 1, "maximum": BBOX_MAX[2]},
-    ],
-    "minItems": 3,
-    "maxItems": 3,
-}
 
-BOX_OP = {
-    "type": "object",
-    "required": ["op", "from", "to", "color"],
-    "properties": {
-        "op": {"const": "box"},
-        "from": POINT,
-        "to": POINT,
-        "color": COLOR,
-    },
-    "additionalProperties": False,
-}
+def build_schema(bbox_max=None):
+    """Construit le schema DSL avec les bornes de bbox donnees (defaut : BBOX_MAX).
 
-CARVE_OP = {
-    "type": "object",
-    "required": ["op", "from", "to"],
-    "properties": {
-        "op": {"const": "carve"},
-        "from": POINT,
-        "to": POINT,
-    },
-    "additionalProperties": False,
-}
+    Tout est reconstruit a chaque appel parce que les sous-schemas se referencent :
+    resserrer POINT sans resserrer BBOX_SCHEMA laisserait le modele declarer une boite
+    de 48 et y poser des coordonnees de 48. La borne doit etre coherente partout.
+    """
+    bornes = list(bbox_max) if bbox_max is not None else list(BBOX_MAX)
+    point = _xyz_schema(bornes)
 
-COLUMN_OP = {
-    "type": "object",
-    "required": ["op", "at", "height", "color"],
-    "properties": {
-        "op": {"const": "column"},
-        "at": POINT,
-        "height": {"type": "integer", "minimum": 1, "maximum": BBOX_MAX[2]},
-        "color": COLOR,
-    },
-    "additionalProperties": False,
-}
+    # delta autorise des valeurs negatives (translation dans les deux sens) ; le clamp
+    # reel contre le bbox de CE design a lieu au compile (tache 1.4), pas ici.
+    delta = {
+        "type": "array",
+        "prefixItems": [
+            {"type": "integer", "minimum": -bornes[0], "maximum": bornes[0]},
+            {"type": "integer", "minimum": -bornes[1], "maximum": bornes[1]},
+            {"type": "integer", "minimum": -bornes[2], "maximum": bornes[2]},
+        ],
+        "minItems": 3,
+        "maxItems": 3,
+    }
 
-LAYER_OP = {
-    "type": "object",
-    "required": ["op", "z", "origin", "grid", "color"],
-    "properties": {
-        "op": {"const": "layer"},
-        "z": {"type": "integer", "minimum": 0, "maximum": BBOX_MAX[2]},
-        "origin": {
-            "type": "array",
-            "prefixItems": [
-                {"type": "integer", "minimum": 0, "maximum": BBOX_MAX[0]},
-                {"type": "integer", "minimum": 0, "maximum": BBOX_MAX[1]},
-            ],
-            "minItems": 2,
-            "maxItems": 2,
+    bbox_schema = {
+        "type": "array",
+        "prefixItems": [
+            {"type": "integer", "minimum": 1, "maximum": bornes[0]},
+            {"type": "integer", "minimum": 1, "maximum": bornes[1]},
+            {"type": "integer", "minimum": 1, "maximum": bornes[2]},
+        ],
+        "minItems": 3,
+        "maxItems": 3,
+    }
+
+    box_op = {
+        "type": "object",
+        "required": ["op", "from", "to", "color"],
+        "properties": {
+            "op": {"const": "box"},
+            "from": point,
+            "to": point,
+            "color": COLOR,
         },
-        "grid": {
-            "type": "array",
-            "items": {"type": "string", "pattern": "^[#.]+$"},
-            "minItems": 1,
-            "maxItems": BBOX_MAX[1],
+        "additionalProperties": False,
+    }
+
+    carve_op = {
+        "type": "object",
+        "required": ["op", "from", "to"],
+        "properties": {
+            "op": {"const": "carve"},
+            "from": point,
+            "to": point,
         },
-        "color": COLOR,
-    },
-    "additionalProperties": False,
-}
+        "additionalProperties": False,
+    }
 
-MIRROR_OP = {
-    "type": "object",
-    "required": ["op", "axis"],
-    "properties": {
-        "op": {"const": "mirror"},
-        "axis": {"type": "string", "enum": ["x", "y", "z"]},
-    },
-    "additionalProperties": False,
-}
-
-TRANSLATE_GROUP_OP = {
-    "type": "object",
-    "required": ["op", "ops", "delta", "count"],
-    "properties": {
-        "op": {"const": "translate_group"},
-        "ops": {
-            "type": "array",
-            "items": {"anyOf": [BOX_OP, CARVE_OP, COLUMN_OP, LAYER_OP]},
-            "minItems": 1,
-            "maxItems": 20,
+    column_op = {
+        "type": "object",
+        "required": ["op", "at", "height", "color"],
+        "properties": {
+            "op": {"const": "column"},
+            "at": point,
+            "height": {"type": "integer", "minimum": 1, "maximum": bornes[2]},
+            "color": COLOR,
         },
-        "delta": DELTA,
-        "count": {"type": "integer", "minimum": 1, "maximum": 20},
-    },
-    "additionalProperties": False,
-}
+        "additionalProperties": False,
+    }
 
-SCHEMA = {
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "type": "object",
-    "required": ["name", "bbox", "ops"],
-    "properties": {
-        "name": {"type": "string", "minLength": 1, "maxLength": 60},
-        "bbox": BBOX_SCHEMA,
-        "ops": {
-            "type": "array",
-            "items": {
-                "anyOf": [BOX_OP, CARVE_OP, COLUMN_OP, LAYER_OP, MIRROR_OP, TRANSLATE_GROUP_OP]
+    layer_op = {
+        "type": "object",
+        "required": ["op", "z", "origin", "grid", "color"],
+        "properties": {
+            "op": {"const": "layer"},
+            "z": {"type": "integer", "minimum": 0, "maximum": bornes[2]},
+            "origin": {
+                "type": "array",
+                "prefixItems": [
+                    {"type": "integer", "minimum": 0, "maximum": bornes[0]},
+                    {"type": "integer", "minimum": 0, "maximum": bornes[1]},
+                ],
+                "minItems": 2,
+                "maxItems": 2,
             },
-            "minItems": 1,
-            "maxItems": 60,
+            "grid": {
+                "type": "array",
+                "items": {"type": "string", "pattern": "^[#.]+$"},
+                "minItems": 1,
+                "maxItems": bornes[1],
+            },
+            "color": COLOR,
         },
-    },
-    "additionalProperties": False,
-}
+        "additionalProperties": False,
+    }
+
+    # cylinder/sphere : le modele DECLARE un volume courbe, il ne le rasterise pas.
+    # Mesure qui justifie ces deux operations : sur le jeu primitives, les formes
+    # courbes passent de 0.391 a 0.619 d'IoU et de 339 s a 131 s de generation —
+    # decrire un cercle en `layer` obligeait le modele a faire de l'arithmetique voxel
+    # de tete. Le DSL pouvait deja les exprimer exactement (test aller-retour
+    # verrouille a IoU 1.0) : c'est le modele qui echouait, donc on lui retire le
+    # rasterisage et src.compiler le fait avec src.primitives.
+    cylinder_op = {
+        "type": "object",
+        "required": ["op", "at", "diameter", "height", "color"],
+        "properties": {
+            "op": {"const": "cylinder"},
+            "at": point,
+            "diameter": {"type": "integer", "minimum": 1,
+                         "maximum": min(bornes[0], bornes[1])},
+            "height": {"type": "integer", "minimum": 1, "maximum": bornes[2]},
+            "color": COLOR,
+        },
+        "additionalProperties": False,
+    }
+
+    sphere_op = {
+        "type": "object",
+        "required": ["op", "at", "diameter", "color"],
+        "properties": {
+            "op": {"const": "sphere"},
+            "at": point,
+            "diameter": {"type": "integer", "minimum": 1, "maximum": min(bornes)},
+            "color": COLOR,
+        },
+        "additionalProperties": False,
+    }
+
+    mirror_op = {
+        "type": "object",
+        "required": ["op", "axis"],
+        "properties": {
+            "op": {"const": "mirror"},
+            "axis": {"type": "string", "enum": ["x", "y", "z"]},
+        },
+        "additionalProperties": False,
+    }
+
+    translate_group_op = {
+        "type": "object",
+        "required": ["op", "ops", "delta", "count"],
+        "properties": {
+            "op": {"const": "translate_group"},
+            # Volontairement SANS cylinder/sphere : chaque variante ajoutee ici grossit
+            # la grammaire que LM Studio compile, et l'inference est deja limitee par le
+            # CPU. A ouvrir seulement si une mesure montre qu'une serie de cylindres
+            # manque.
+            "ops": {
+                "type": "array",
+                "items": {"anyOf": [box_op, carve_op, column_op, layer_op]},
+                "minItems": 1,
+                "maxItems": 20,
+            },
+            "delta": delta,
+            "count": {"type": "integer", "minimum": 1, "maximum": 20},
+        },
+        "additionalProperties": False,
+    }
+
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": ["name", "bbox", "ops"],
+        "properties": {
+            "name": {"type": "string", "minLength": 1, "maxLength": 60},
+            "bbox": bbox_schema,
+            "ops": {
+                "type": "array",
+                "items": {
+                    "anyOf": [box_op, carve_op, column_op, layer_op, cylinder_op,
+                              sphere_op, mirror_op, translate_group_op]
+                },
+                "minItems": 1,
+                "maxItems": 60,
+            },
+        },
+        "additionalProperties": False,
+    }
 
 
-def validate_design(data):
-    """Valide un design DSL contre SCHEMA. Leve jsonschema.ValidationError si invalide."""
+# Schema par defaut, bornes globales. Reste expose tel quel : c'est ce qu'importent
+# src/designer.py et les tests.
+SCHEMA = build_schema()
+
+
+def validate_design(data, schema=None):
+    """Valide un design DSL. Leve jsonschema.ValidationError si invalide.
+
+    schema : schema resserre renvoye par build_schema, ou None pour les bornes
+    globales. Valider contre le schema resserre est ce qui transforme la taille
+    demandee en garantie plutot qu'en voeu.
+    """
     from jsonschema import validate
-    validate(instance=data, schema=SCHEMA)
+    validate(instance=data, schema=schema if schema is not None else SCHEMA)
     return data
 
 
 if __name__ == "__main__":
     from jsonschema import Draft202012Validator
+
     Draft202012Validator.check_schema(SCHEMA)
-    print("OK — schema DSL valide (Draft 2020-12)")
+    print("OK — schema DSL par defaut valide (Draft 2020-12)")
+    for nom, bornes in TAILLES.items():
+        Draft202012Validator.check_schema(build_schema(bornes))
+        print(f"OK — schema '{nom}' {bornes} valide")

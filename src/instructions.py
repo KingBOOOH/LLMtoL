@@ -8,9 +8,10 @@ cette machine, et l'evaluer supposerait d'ajouter une dependance externe lourde 
 besoin que la machinerie existante couvre deja — on sait deja ecrire un .ldr et rendre un
 lot en un seul processus Blender.
 
-Decoupage : par couche z croissante, car c'est l'ordre de montage reel (on ne pose pas une
-piece sous une piece deja posee). Les couches trop maigres sont fusionnees et les couches
-trop denses scindees, pour viser un nombre de pieces lisible par etape.
+Decoupage : nombre FIXE de pieces par etape, dans l'ordre de montage reel (z croissant :
+on ne pose pas une piece sous une piece deja posee). Sur les gros modeles ce nombre
+augmente automatiquement pour que le total d'etapes reste borne — rendre une image par
+etape coute un passage Blender, et une notice de 159 etapes est de toute facon illisible.
 """
 
 import math
@@ -19,22 +20,49 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.ldraw_writer import write_ldr
+from src.validator import resume_constructibilite
 
 PIECES_PAR_ETAPE = int(os.environ.get("LEGO_PIECES_PAR_ETAPE", "8"))
+# Si l'utilisateur fixe la variable, son choix prime et le regroupement automatique est
+# desactive : on ne discute pas une consigne explicite.
+PIECES_PAR_ETAPE_IMPOSE = "LEGO_PIECES_PAR_ETAPE" in os.environ
+
+# Plafond du nombre d'etapes. Vit ici, la ou le decoupage se decide, et non dans
+# pipeline.py qui ne fait que consommer le resultat.
+NOTICE_MAX_ETAPES = int(os.environ.get("LEGO_NOTICE_MAX_ETAPES", "40"))
 
 
-def split_steps(placements, pieces_par_etape=None):
-    """Repartit les placements en etapes d'un nombre FIXE de pieces.
+def pieces_par_etape_pour(n_pieces, max_etapes=None):
+    """Combien de pieces par etape pour que le total d'etapes reste sous le plafond.
+
+    En dessous du seuil (8 x 40 = 320 pieces), renvoie PIECES_PAR_ETAPE : le
+    comportement des petits modeles ne bouge pas. Au-dela, le nombre grossit juste ce
+    qu'il faut. Un choix explicite via LEGO_PIECES_PAR_ETAPE desactive l'adaptation.
+    """
+    plafond = max_etapes or NOTICE_MAX_ETAPES
+    if PIECES_PAR_ETAPE_IMPOSE:
+        return PIECES_PAR_ETAPE
+    return max(PIECES_PAR_ETAPE, math.ceil(n_pieces / plafond))
+
+
+def split_steps(placements, pieces_par_etape=None, max_etapes=None):
+    """Repartit les placements en etapes d'un nombre fixe de pieces.
 
     Decoupage par quantite et non par couche z : une couche peut contenir une seule
     piece comme cinquante, ce qui donnait des etapes tres inegales et faisait perdre
     le fil. A nombre constant, chaque etape demande le meme effort.
 
+    Sur un gros modele le nombre de pieces par etape augmente automatiquement, pour que
+    le total d'etapes reste sous NOTICE_MAX_ETAPES. Avant, au-dela de 320 pieces les
+    rendus d'etapes etaient purement SAUTES : un chateau de 1267 pieces donnait 159
+    etapes et une notice sans la moindre image, donc inutilisable. Mieux vaut des
+    etapes plus chargees qu'une notice vide.
+
     L'ordre de montage reste physiquement valide : les placements sont tries par z
     croissant d'abord (on ne pose pas une piece sous une piece deja posee), puis par
     position dans la couche pour que la progression soit lisible d'une etape a l'autre.
     """
-    taille = pieces_par_etape or PIECES_PAR_ETAPE
+    taille = pieces_par_etape or pieces_par_etape_pour(len(placements), max_etapes)
     ordonnes = sorted(placements, key=lambda p: (p.z, p.y, p.x))
     return [ordonnes[i:i + taille] for i in range(0, len(ordonnes), taille)]
 
@@ -97,20 +125,33 @@ def compose_step_image(step_render, piece_images, out_path, largeur_encart=0.16)
     box_w, box_h = cell * colonnes, cell * lignes
     marge = int(W * 0.02)
 
-    encart = Image.new("RGB", (box_w, box_h), (255, 255, 255))
+    # Fond TRANSPARENT, et un bandeau blanc dessine par ligne, large exactement de son
+    # contenu. Un rectangle blanc unique laissait une zone vide des que le nombre de
+    # pieces n'etait pas un multiple du nombre de colonnes (5 ou 7 pieces sur 3
+    # colonnes) : ca se lisait comme une piece manquante. Centrer la derniere ligne
+    # deplacait le vide sans le supprimer.
+    encart = Image.new("RGBA", (box_w, box_h), (0, 0, 0, 0))
     dessin = ImageDraw.Draw(encart)
     try:
         police = ImageFont.truetype("arialbd.ttf", max(14, cell // 5))
     except OSError:
         police = ImageFont.load_default()
 
+    # Lignes alignees a DROITE : l'encart est colle au coin superieur droit, son bord
+    # droit reste donc rectiligne et le decrochage se voit a gauche, ou il est discret.
+    def _decalage(ligne):
+        return box_w - min(colonnes, n - ligne * colonnes) * cell
+
+    for ligne in range(lignes):
+        x = _decalage(ligne)
+        y = ligne * cell
+        largeur = min(colonnes, n - ligne * colonnes) * cell
+        dessin.rectangle([x, y, x + largeur - 1, y + cell - 1],
+                         fill=(255, 255, 255, 255), outline=(180, 180, 180), width=3)
+
     for i, (chemin, quantite) in enumerate(vignettes):
         ligne, col = divmod(i, colonnes)
-        # Derniere ligne incomplete : on centre ses elements plutot que de laisser un
-        # bloc blanc vide dans un coin, qui se lit comme une piece manquante.
-        dans_ligne = min(colonnes, n - ligne * colonnes)
-        decalage = (box_w - dans_ligne * cell) // 2
-        cx = decalage + col * cell
+        cx = _decalage(ligne) + col * cell
         cy = ligne * cell
 
         vign = Image.open(chemin).convert("RGB").resize((cell, cell), Image.LANCZOS)
@@ -125,8 +166,8 @@ def compose_step_image(step_render, piece_images, out_path, largeur_encart=0.16)
                          fill=(30, 30, 34))
         dessin.text((tx, ty), texte, fill=(255, 255, 255), font=police)
 
-    dessin.rectangle([0, 0, box_w - 1, box_h - 1], outline=(180, 180, 180), width=3)
-    base.paste(encart, (W - box_w - marge, marge))
+    # Colle avec son canal alpha : les zones sans piece laissent voir l'assemblage.
+    base.paste(encart, (W - box_w - marge, marge), encart)
     base.save(out_path)
     return True
 
@@ -175,14 +216,42 @@ def write_step_models(placements, steps_dir, model_name="modele"):
     return dossiers, etapes
 
 
-def write_notice_html(etapes, dossiers, path, model_name="modele", vue="iso"):
+def _bloc_etat(resume):
+    """Encadre d'ouverture de la notice : le modele tient-il debout ?
+
+    Un modele sans probleme le dit explicitement, plutot que d'afficher un encadre
+    vide qui laisserait croire a un oubli.
+    """
+    if resume is None:
+        return ""
+    if resume["ok"]:
+        return ("<div class='etat bon'><h3>Avant de commencer</h3>"
+                "Ce modele est d'un seul tenant, pose au sol, et chaque piece repose "
+                "sur quelque chose. Rien a surveiller.</div>")
+    points = "".join(f"<li>{p}</li>" for p in resume["phrases"])
+    return (f"<div class='etat attention'><h3>Avant de commencer</h3>"
+            f"<ul>{points}</ul></div>")
+
+
+def write_notice_html(etapes, dossiers, path, model_name="modele", vue="iso",
+                      rapport=None):
     """Assemble la notice HTML a partir des rendus deja produits pour chaque etape.
 
     Les images sont referencees en chemin relatif : la notice reste lisible tant qu'elle
     accompagne le dossier des etapes.
+
+    rapport : le rapport du validateur. S'il est fourni, la notice s'ouvre sur un etat
+    de constructibilite en francais et signale les etapes contenant une piece sans
+    support. Sans lui la notice reste correcte, simplement muette sur ce point — ce
+    qu'elle etait avant : l'utilisateur recevait quatre images et devait juger seul.
     """
     base = os.path.dirname(os.path.abspath(path))
     total = sum(len(e) for e in etapes)
+
+    resume = resume_constructibilite(rapport) if rapport else None
+    # Coordonnees des pieces sans support -> numeros d'etapes concernees. Les etapes
+    # etant une partition des placements, l'appartenance est exacte.
+    sans_support = {tuple(c) for c in (rapport or {}).get("metrics", {}).get("flottantes", [])}
 
     blocs = []
     for i, (etape, dossier) in enumerate(zip(etapes, dossiers), 1):
@@ -202,10 +271,16 @@ def write_notice_html(etapes, dossiers, path, model_name="modele", vue="iso"):
 
         visuel = (f"<img src='{rel}' alt='etape {i}'>" if dispo
                   else "<div class='manque'>rendu absent</div>")
+
+        n_sans_support = sum((p.x, p.y, p.z) in sans_support for p in etape)
+        alerte = (f"<p class='alerte'>{n_sans_support} piece(s) de cette etape n'ont "
+                  f"rien juste en dessous : maintiens-les en place le temps de poser "
+                  f"la suite.</p>" if n_sans_support else "")
+
         blocs.append(
             f"<section><h2>Etape {i} <small>/ {len(etapes)}</small></h2>"
             f"{visuel}<p class='ajout'><strong>{len(etape)} piece(s) a poser :</strong> "
-            f"{liste}</p></section>"
+            f"{liste}</p>{alerte}</section>"
         )
 
     html = f"""<!doctype html>
@@ -223,10 +298,19 @@ def write_notice_html(etapes, dossiers, path, model_name="modele", vue="iso"):
  .ajout {{ margin: .8rem 0 0; font-size: .92rem; }}
  .manque {{ padding: 3rem; background: #f0f0f0; color: #999; text-align: center;
             border-radius: 6px; }}
+ .alerte {{ margin: .6rem 0 0; padding: .5rem .7rem; font-size: .9rem;
+            background: #fff6e0; border-left: 3px solid #e8a33d; border-radius: 4px; }}
+ .etat {{ padding: .9rem 1.1rem; border-radius: 8px; margin-bottom: 1.8rem;
+          border-left: 4px solid; }}
+ .etat.bon {{ background: #eef9f1; border-color: #4ec37a; }}
+ .etat.attention {{ background: #fff6e0; border-color: #e8a33d; }}
+ .etat h3 {{ margin: 0 0 .4rem; font-size: 1rem; }}
+ .etat ul {{ margin: .4rem 0 0; padding-left: 1.2rem; }}
 </style></head><body>
 <h1>Notice de montage — {model_name}</h1>
 <p class="resume">{len(etapes)} etapes, {total} pieces au total.
 Chaque image montre le modele <em>a la fin</em> de l'etape.</p>
+{_bloc_etat(resume)}
 {chr(10).join(blocs)}
 </body></html>"""
 

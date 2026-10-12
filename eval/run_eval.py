@@ -54,7 +54,8 @@ def run_one(prompt_text, seed, work_dir, reference=None):
     t0 = time.time()
 
     row = {"valid_json": False, "n_pieces": 0, "score": 0.0,
-           "n_components": 0, "fill_rate": 0.0, "repairs_used": 0, "iou": ""}
+           "n_components": 0, "fill_rate": 0.0, "repairs_used": 0, "iou": "",
+           "z_min": ""}
 
     try:
         from src.designer import design as designer_design
@@ -70,6 +71,9 @@ def run_one(prompt_text, seed, work_dir, reference=None):
             "n_components": metrics["n_components"],
             "fill_rate": metrics["fill_rate"],
             "repairs_used": result["repairs_used"],
+            # "" plutot que 0 si absent : un z_min inconnu ne doit pas se confondre
+            # avec un modele correctement pose sur le sol.
+            "z_min": metrics.get("z_min", ""),
         })
         if reference is not None:
             row["iou"] = round(voxel_iou(build_reference(reference), result["voxels"]), 3)
@@ -114,7 +118,8 @@ def _row_from_existing(work_dir, reference):
     row = {"valid_json": True, "duration_s": round(duration, 2),
            "n_pieces": metrics["n_pieces"], "score": report["score"],
            "n_components": metrics["n_components"], "fill_rate": metrics["fill_rate"],
-           "repairs_used": n_repairs, "iou": ""}
+           "repairs_used": n_repairs, "iou": "",
+           "z_min": metrics.get("z_min", "")}
     if reference is not None:
         row["iou"] = round(voxel_iou(build_reference(reference), voxels), 3)
     return row
@@ -139,7 +144,7 @@ def run_eval(version, testset_path, n_per_prompt, out_dir, resume=False):
     csv_path = os.path.join(out_dir, f"{version}_{date_tag}.csv")
     fieldnames = ["id", "category", "complexity", "attempt", "seed", "valid_json",
                   "duration_s", "n_pieces", "score", "n_components", "fill_rate",
-                  "repairs_used", "iou"]
+                  "repairs_used", "iou", "z_min"]
 
     rows = []
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
@@ -193,6 +198,13 @@ def _write_summary(rows, version, path):
     ]
     if avg_iou is not None:
         lines.append(f"- **IoU moyen vs reference : {avg_iou:.3f}** (1.0 = forme exacte)")
+
+    # Mesure du decalage d'indice z : ligne de base avant correction du prompt =
+    # 8 designs sur 26 du jeu primitives ne touchaient pas le sol.
+    z_rows = [r for r in valid_rows if r.get("z_min") not in (None, "")]
+    if z_rows:
+        off = [r for r in z_rows if int(r["z_min"]) != 0]
+        lines.append(f"- Ne touchent pas le sol (z_min != 0) : {len(off)}/{len(z_rows)}")
     lines += ["", "## Par categorie", "", "| categorie | valide | score moyen | IoU moyen |",
               "|---|---|---|---|"]
 

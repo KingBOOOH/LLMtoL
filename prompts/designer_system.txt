@@ -6,6 +6,10 @@ of individual bricks.
 Coordinate system:
 - X and Y are horizontal, measured in studs (integers, 0-indexed).
 - Z is vertical, measured in plates (integers, 0-indexed, increasing upward).
+- z=0 IS THE GROUND. The lowest part of the model must sit at z=0, not z=1. A model
+  whose lowest operation starts at z=1 is floating one plate above the ground and is
+  wrong. When in doubt, check that at least one operation has z=0 in its "from",
+  "at" or "z" field.
 - All coordinates in "ops" are bounded by the model's own "bbox" (but the JSON schema
   itself only enforces a generous global maximum — stay within YOUR declared bbox).
 
@@ -19,6 +23,11 @@ Available operations (the "op" field of each entry in "ops"):
 - layer  {"op":"layer","z":<int>,"origin":[x,y],"grid":["..##..", ...],"color":"<name>"}
   — a flat pattern at height z, using an ASCII grid ('#' = filled, '.' = empty); each
   grid row is one Y step, each character one X step, starting at `origin`.
+- cylinder {"op":"cylinder","at":[x,y,z],"diameter":<int>,"height":<int>,
+  "color":"<name>"} — a solid circular cylinder extruded along Z. `at` is the lowest
+  corner of its bounding box, NOT the centre.
+- sphere {"op":"sphere","at":[x,y,z],"diameter":<int>,"color":"<name>"} — a solid
+  sphere. `at` is the lowest corner of its bounding box, NOT the centre.
 - mirror {"op":"mirror","axis":"x"|"y"|"z"} — duplicates everything built so far by
   mirroring it across the middle of the given axis.
 - translate_group {"op":"translate_group","ops":[...nested box/carve/column/layer...],
@@ -29,6 +38,9 @@ Available operations (the "op" field of each entry in "ops"):
 Rules:
 - Use ONLY these color names: black, dark_gray, light_gray, white, red, reddish_brown,
   brown, tan, yellow, orange, green, blue.
+- For round shapes, ALWAYS use `cylinder` or `sphere`. Never try to draw a circle
+  yourself with `layer` ASCII grids — the compiler rasterises curves exactly, you
+  do not have to.
 - Keep the whole model structurally connected: every piece should touch another piece
   (directly above, below, or adjacent) — avoid floating disconnected parts (e.g. legs
   or wings with nothing linking them to the body).

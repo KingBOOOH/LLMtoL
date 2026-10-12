@@ -8,6 +8,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from src.dsl_schema import resoudre_bornes
 from src.llm_client import LLMCallError, call_llm
 
 PROMPTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts")
@@ -16,12 +17,25 @@ with open(os.path.join(PROMPTS_DIR, "planner_system.txt"), "r", encoding="utf-8"
     SYSTEM_PROMPT = f.read()
 
 
-def plan(user_prompt, work_dir, seed=None):
+def plan(user_prompt, work_dir, seed=None, taille=None, bbox_max=None):
     """Retourne le texte du plan et le sauvegarde dans work_dir/plan.md.
+
+    taille / bbox_max : la borne est AUSSI rappelee au planificateur, pas seulement
+    imposee au designer. Sans ca il proposerait une boite de 40 que le schema
+    resserre refuserait ensuite, et le designer passerait son budget de reparations
+    a rattraper un plan infaisable.
+
     Leve LLMCallError en cas d'echec reseau/HTTP apres retries (gere par call_llm)."""
+    message = user_prompt
+    if taille is not None or bbox_max is not None:
+        bx, by, bz = resoudre_bornes(taille, bbox_max)
+        message = (f"{user_prompt}\n\n"
+                   f"Contrainte de taille imperative : la boite englobante ne doit pas "
+                   f"depasser {bx} tenons (X) x {by} tenons (Y) x {bz} plates (Z).")
+
     content, _metadata = call_llm(
         SYSTEM_PROMPT,
-        user_prompt,
+        message,
         schema=None,
         temperature=0.7,
         seed=seed,

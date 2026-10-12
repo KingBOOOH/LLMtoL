@@ -27,11 +27,19 @@ eval/results/ mais ne sont plus regénérables.
 
 Architecture réelle
 
-Point d'entrée principal :
+Points d'entrée :
 
+lego.py
+  Un prompt -> un dossier complet (plan, design, model.ldr, 4 rendus, planche,
+  nomenclature, notice). Options : --taille, --iterations, --sans-notice.
 pipeline.py
-  Orchestrateur bout-en-bout. Lit prompts.json, génère tous les modèles, puis lance UN
-  SEUL processus Blender pour tout rendre, et assemble les planches.
+  Orchestrateur de lot. Lit prompts.json, génère tous les modèles, puis lance UN
+  SEUL processus Blender pour tout rendre, et assemble les planches. Expose
+  generer_modele / preparer_notice / render_all, réutilisés par lego.py et agent.py :
+  un seul chemin de génération dans le projet.
+agent.py
+  Prend les jobs déposés en base par l'API web et les traite sur l'hôte (Blender et
+  LM Studio y sont). Reprend un job abandonné après une coupure mémoire.
 
 Génération (appels LLM) :
 
@@ -86,7 +94,12 @@ décrivent 400 pièces. Coordonnées entières, X/Y en tenons, Z en plates (1 br
   ]
 }
 
-Opérations : box, carve, column, layer (grille ASCII), mirror, translate_group.
+Opérations : box, carve, column, layer (grille ASCII), cylinder, sphere, mirror,
+translate_group. cylinder et sphere sont rastérisées par src/primitives.py — les
+MÊMES fonctions qui servent de référence à l'IoU, pour que les deux ne divergent
+jamais. Leur champ `at` est le coin bas de la boîte englobante, pas le centre.
+translate_group n'accepte PAS cylinder/sphere en imbriqué : chaque variante
+grossit la grammaire que LM Studio compile, et l'inférence est limitée par le CPU.
 Palette fermée de 12 couleurs (voir src/dsl_schema.py).
 
 Le schéma JSON est le principal outil d'alignement : bien borné, il rend le modèle
@@ -117,12 +130,75 @@ response_format. Le réglage REVIENT à chaque rechargement du modèle. Symptôm
 répond la même structure JSON quel que soit le prompt, même sans rapport. Ce piège a coûté
 du temps trois fois. Vérifier avant tout run long.
 
-Le modèle décale ses indices : environ un tiers des générations commencent à z=1 au lieu
-de z=0. Mesuré sur le jeu primitives, reproductible.
+Décalage d'indice z : RÉSOLU, mais pas là où on le croyait. Le défaut venait du
+PLANIFICATEUR, pas du designer. Son plan écrivait "z=1..8" et le designer obéissait au
+plan qu'on lui donne. Corriger prompts/designer_system.txt n'a rien changé (mesuré :
+8/26 avant, 9/26 après). La consigne a été déplacée dans prompts/planner_system.txt :
+"Z IS 0-INDEXED AND z=0 IS THE GROUND", plus un z=0 figé dans le gabarit de sortie.
 
-Le modèle ne sait pas rastériser un cercle. Formes en box : IoU 0.83 à 1.00. Formes
-courbes : 0.15 à 0.70, et jusqu'à 35x plus lentes. Le DSL PEUT les exprimer exactement
-(test verrouillé, IoU aller-retour = 1.0) : le goulot est le modèle, pas le langage.
+Mesuré sur le jeu complet (9 formes, 3 tentatives) : 9/26 hors sol -> 0/26. Les trois
+formes concernées passent de 0.819 a 1.000 d'IoU.
+
+Le décalage n'était PAS cosmétique : en démarrant à z=1 dans un bbox de hauteur n, le
+modèle se faisait tronquer d'une plate par le haut contre son propre bbox. Les IoU
+observés valaient exactement (n-1)/n — 7/8=0.875 pour le cube, 5/6=0.833 pour le pavé,
+3/4=0.750 pour le cylindre. Une couche entière perdue à chaque fois.
+
+Leçon de méthode : la première "mesure" de cette correction était fausse parce qu'elle
+contournait le planificateur avec un plan écrit à la main contenant "poser au sol
+(z=0)". Elle mesurait cette phrase, pas la correction. Ne jamais court-circuiter une
+étape de la chaîne pour mesurer l'effet d'un changement sur cette chaîne.
+
+LM Studio garde un Structured Output collé au modèle qwen3-coder-30b, hérité de la
+chaîne v0 supprimée (llm.prediction.structured + llm.prediction.systemPrompt dans
+.lmstudio/.internal/user-concrete-model-default-config/qwen/qwen3-coder-30b.json). Il
+force la réponse au schéma action/cube/rectangle. Vérifié : ni un system prompt à nous,
+ni un response_format {"type":"text"} ne le neutralisent — seul un json_schema explicite
+le fait. Le designer est donc immunisé, le planificateur NON : il répond
+[{"action":"create","object":"cube"}] à n'importe quoi. Se vide dans l'interface LM
+Studio (My Models > le modèle > vider System Prompt et Structured Output). Tant que ce
+n'est pas fait, eval/run_eval.py est inutilisable (il passe par le planificateur).
+
+Le modèle ne sait pas rastériser un cercle. D'où les opérations cylinder/sphere, qui
+déplacent le rastérisage vers Python (src/primitives.py). MESURE FIGÉE COMPLÈTE, 9
+formes x 3 tentatives via le vrai planificateur. Référence avant cylinder/sphere :
+v1prim_20260923_093512 ; après : v1prim_20261010_185403 ; après correction du z :
+v1primz_* + v1primB_* + v1primC_*.
+
+  cylinder/sphere seuls   IoU global 0.614 -> 0.706   courbes 0.391 -> 0.619
+  puis correction du z    IoU global 0.706 -> 0.774   courbes 0.619 -> 0.698
+                          box 0.769 -> 0.830          durée 78s -> 52s
+                          hors sol 9/26 -> 0/26
+
+  cube     0.875 -> 1.000     pave     0.833 -> 1.000     cylindre 0.750 -> 1.000
+  anneau   0.838 -> 0.947     croix/tour 1.000 (inchangé) pyramide 0.330 -> 0.384
+  escalier 0.139 -> 0.149 (pire cas du jeu)              sphere   0.527 -> 0.342
+
+Opérations réellement employées : box, cylinder, layer, carve, mirror. cylinder est
+adopté, sphere NON.
+
+Le recul de prim_sphere n'est PAS une régression : sur 3 tentatives, une échoue (déjà
+avant), une reproduit exactement l'ancien résultat (0.527 avec layer) et une bascule sur
+box+carve et tombe à 0.157. La moyenne repose sur deux générations exploitables, dont
+une qui joue à pile ou face sur la méthode. Chiffre non solide statistiquement.
+
+Conséquence sur la métrique : un IoU de 1.0 sur prim_cylindre mesure désormais que le
+modèle a choisi la bonne opération et les bons paramètres, plus qu'il a su tracer un
+cercle. Ce n'est pas la même chose, et c'est voulu.
+
+La sphère est ronde dans la grille mais APLATIE à l'écran (~2.5x) : `diameter` vaut
+autant de tenons en X/Y que de plates en Z, or un tenon fait 20 LDU et une plate 8.
+src/primitives.py assume ce choix et les références d'IoU l'utilisent ; changer l'un
+sans l'autre rendrait la métrique fausse.
+
+La taille demandee (--taille / bbox_max) est une garantie par le schema, pas une
+consigne : build_schema() resserre bbox ET coordonnees. Mesure, 3 generations par
+taille : 0 depassement sur 9. MAIS la borne est un PLAFOND, pas une cible — `petite`
+sature sa borne (16x16x20 aux 3 essais), `grande` ne la touche jamais (16x16x24,
+24x24x24, 16x16x12) parce que le planificateur choisit ce qu'il juge raisonnable.
+Choisir `grande` n'a donc aucun effet observable aujourd'hui. Et le nombre de pieces
+ne suit pas la taille (petite 50-143, moyenne 65-241, grande 137-189) : il depend du
+creux du modele. La garantie porte sur la boite englobante, pas sur le compte.
 
 EEVEE rend les pièces en aplat uniforme (groupes de nœuds de l'add-on écrits pour Blender
 2.81). Utiliser Cycles, ou Workbench pour itérer vite.
@@ -152,7 +228,8 @@ Codex ne doit pas :
 demander au LLM de produire directement des briques ou des coordonnées finales ;
 simuler ou mocker un résultat pour faire passer un test — si une étape ne peut pas être
   testée, le dire ;
-ajouter des opérations au DSL tant que les six de base ne sont pas solides ;
+élargir le DSL au-delà des huit opérations actuelles sans une mesure qui montre
+  laquelle manque ;
 élargir le catalogue de pièces avant que la géométrie ne soit fiable ;
 corriger un mauvais alignement en allongeant le system prompt sans mesurer d'abord ;
 supprimer un fichier sans validation ;
@@ -163,15 +240,32 @@ casser la compatibilité Windows (attention à l'encodage : sortie redirigée = 
 Priorités techniques actuelles
 
 Priorité 1 :
-  corriger le décalage d'indice z (une phrase de prompt, touche un tiers des générations) ;
-  remesurer sur le jeu primitives après correction.
+  similarité sémantique (CLIP/VLM). Sur un objet non primitif, aucune métrique ne dit
+  aujourd'hui si le résultat ressemble au prompt. C'est le dernier grand trou : on sait
+  mesurer la validité géométrique et les formes primitives, rien entre les deux.
+  LM Studio sert plusieurs modèles à la fois (champ `model` de la requête, llm_client.py
+  l'envoie déjà) : un VLM qui note render_iso.png est la bonne forme. À calibrer d'abord
+  sur le jeu primitives, où l'IoU donne la vérité terrain — si la note du VLM ne corrèle
+  pas avec l'IoU connu, le juge est inutilisable et ça se sait sans dépenser une
+  génération.
+  Ne PAS mettre un modèle texte à vérifier la géométrie : src/validator.py le fait déjà,
+  exactement et gratuitement.
 
 Priorité 2 :
-  ajouter des opérations cylinder/sphere au DSL — le modèle sait composer des volumes,
-  pas rastériser ; lui donner la primitive et laisser Python faire le rastérisage.
+  sphere n'est pas adopté, le modèle garde layer (IoU 0.527). Cause identifiée : le
+  prompt figé du jeu de test dicte la méthode — "chaque couche horizontale est un
+  disque, le plus large au milieu, rétrécissant vers le haut et vers le bas". Le modèle
+  obéit au prompt. Celui du cylindre ne prescrit rien, d'où l'adoption immédiate
+  (0.272 -> 0.750). Ajouter un exemple few-shot avec sphere a été essayé et MESURÉ :
+  sans effet sur l'adoption, IoU dégradé (0.526 -> 0.258), exemple retiré.
+  Décision à prendre : reformuler ce prompt du jeu figé (ce qui casse la comparabilité
+  de tout l'historique) ou accepter que ce cas mesure l'obéissance au prompt.
+
+  prim_escalier reste le pire cas du jeu (0.139) et n'a jamais été diagnostiqué.
 
 Priorité 3 :
-  nomenclature des pièces (BOM), notice de montage, similarité sémantique (CLIP/VLM).
+  LPub3D n'a jamais été évalué avant d'écrire src/instructions.py (le plan le demandait).
+  À faire si la notice doit progresser sérieusement.
 
 Organisation des outputs
 
@@ -206,10 +300,12 @@ Prérequis vérifiables d'un coup : python tools/check_env.py
 
 Commandes utiles
 
-python -m pytest tests/ -q                      tests (64)
+python -m pytest tests/ -q                      tests (97)
 python tools/check_env.py                       diagnostic environnement
-python pipeline.py                              bout-en-bout depuis prompts.json
-python -m src.designer "<prompt>" <dossier>     une seule génération
+python lego.py "<prompt>"                       UN modèle complet, en une commande
+python lego.py "<prompt>" --taille petite --iterations 3
+python pipeline.py                              lot depuis prompts.json
+python -m src.designer "<prompt>" <dossier>     design seul, sans rendu ni notice
 python -m tools.build_from_design <design.json> design -> .ldr, sans LLM
 python -m tools.render_batch --glob "<motif>" --assemble
 python -m eval.run_eval --version v1 --n 3

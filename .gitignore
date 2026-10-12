@@ -26,3 +26,6 @@ dist/
 desktop.ini
 Thumbs.db
 .DS_Store
+
+# --- Pile web ---
+.env

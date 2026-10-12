@@ -56,18 +56,27 @@ def check_floating(placements, voxels):
     typiquement les plaques centrales d'un toit plat au-dessus d'une piece creuse.
     Une piece posee au sol (z=0) est evidemment exclue.
     """
-    errors = []
+    return [
+        f"piece flottante : {p.part.ldraw_id} en ({p.x},{p.y},{p.z}) — "
+        f"aucun voxel rempli juste en-dessous (z={p.z - 1}), rien ne la soutient"
+        for p in pieces_flottantes(placements, voxels)
+    ]
+
+
+def pieces_flottantes(placements, voxels):
+    """Liste les placements sans rien sous leur emprise. Donnee STRUCTUREE.
+
+    Separe de check_floating pour que la notice puisse rattacher chaque piece a son
+    etape de montage : re-extraire des coordonnees depuis des phrases serait fragile.
+    """
+    flottantes = []
     for p in placements:
         if p.z == 0:
             continue  # repose au sol (couche interne 0)
         w, d = _footprint(p)
-        below = voxels[p.x:p.x + w, p.y:p.y + d, p.z - 1]
-        if not np.any(below):
-            errors.append(
-                f"piece flottante : {p.part.ldraw_id} en ({p.x},{p.y},{p.z}) — "
-                f"aucun voxel rempli juste en-dessous (z={p.z - 1}), rien ne la soutient"
-            )
-    return errors
+        if not np.any(voxels[p.x:p.x + w, p.y:p.y + d, p.z - 1]):
+            flottantes.append(p)
+    return flottantes
 
 
 MIN_VOXELS_WARNING = 8
@@ -213,6 +222,69 @@ def check_center_of_mass(voxels):
     return []
 
 
+def check_ground_contact(voxels):
+    """Verifie que le modele touche le sol (z=0). Retourne (z_min, avertissements).
+
+    Defaut mesure : le modele decale ses indices et demarre a z=1 (8 designs sur 26 du
+    jeu primitives). check_center_of_mass le signalait deja, mais en parlant
+    d'instabilite — un diagnostic trompeur qui envoyait la boucle de reparation
+    corriger l'equilibre au lieu de l'origine. Ici le message nomme la vraie cause.
+
+    Volontairement SANS penalite de score propre : le meme defaut coute deja -5 via
+    check_center_of_mass, et double-penaliser casserait la comparaison avec les CSV
+    d'evaluation deja mesures.
+    """
+    filled = np.argwhere(voxels != 0)
+    if len(filled) == 0:
+        return None, []
+    z_min = int(filled[:, 2].min())
+    if z_min == 0:
+        return 0, []
+    return z_min, [
+        f"le modele ne touche pas le sol : sa partie la plus basse est a z={z_min} "
+        f"au lieu de z=0 (decale tout de {z_min} plate(s) vers le bas)"
+    ]
+
+
+def resume_constructibilite(rapport):
+    """Traduit les metriques du rapport en phrases lisibles par un humain.
+
+    Le validateur parle en vocabulaire interne — composantes connexes, voxels, z_min —
+    qui ne veut rien dire pour quelqu'un qui veut juste savoir si son modele tient
+    debout. Aucun calcul ici : uniquement de la mise en mots de ce qui est deja mesure.
+
+    Retourne {"ok": bool, "phrases": [str]}. Une liste vide signifie que tout va bien,
+    et l'appelant doit le dire explicitement plutot que d'afficher un encadre vide.
+
+    Note : server/static/index.html refait cette traduction en JavaScript, parce que le
+    conteneur de l'API ne contient pas src/. Garder les deux formulations alignees.
+    """
+    m = (rapport or {}).get("metrics", {})
+    phrases = []
+
+    n_comp = m.get("n_components")
+    if n_comp and n_comp > 1:
+        phrases.append(f"Le modele est en {n_comp} morceaux separes : il ne tiendra pas "
+                       f"d'un seul tenant.")
+
+    z_min = m.get("z_min")
+    if z_min:
+        phrases.append(f"La partie la plus basse flotte a {z_min} plate(s) au-dessus du "
+                       f"sol au lieu de reposer dessus.")
+
+    n_flot = len(m.get("flottantes") or [])
+    if n_flot:
+        phrases.append(f"{n_flot} piece(s) n'ont rien juste en dessous : il faudra les "
+                       f"maintenir en place le temps de poser la suite.")
+
+    taux = m.get("fill_rate")
+    if taux and taux > 0.85:
+        phrases.append(f"Le modele est rempli a {taux:.0%} : c'est quasiment un bloc "
+                       f"plein, et il consommera beaucoup de pieces.")
+
+    return {"ok": not phrases, "phrases": phrases}
+
+
 def validate(voxels, placements, design):
     """Retourne un report dict : {"score": 0-100, "errors": [...], "warnings": [...]}."""
     empty_errors, empty_warnings = check_not_empty(voxels)
@@ -223,6 +295,7 @@ def validate(voxels, placements, design):
     symmetry_warnings = check_symmetry(voxels, design)
     fill_rate, fill_warnings = check_fill_rate(voxels)
     com_warnings = check_center_of_mass(voxels)
+    z_min, ground_warnings = check_ground_contact(voxels)
     joints_rate = joint_alignment_rate(placements) if placements else 0.0
 
     # "piece flottante" est un AVERTISSEMENT, pas un bloquant — ecart assume avec la
@@ -235,7 +308,7 @@ def validate(voxels, placements, design):
     # qui attrape le vrai defaut grave (membre detache flottant loin du corps).
     errors = empty_errors + collision_errors + connectivity_errors
     warnings = (empty_warnings + floating_errors + bbox_warnings + symmetry_warnings
-                + fill_warnings + com_warnings)
+                + fill_warnings + com_warnings + ground_warnings)
 
     score = 100.0
     score -= 100 if empty_errors else 0
@@ -257,6 +330,11 @@ def validate(voxels, placements, design):
             "n_components": n_components,
             "fill_rate": round(fill_rate, 3),
             "joint_alignment_rate": round(joints_rate, 3),
+            "z_min": z_min,
+            # Coordonnees des pieces sans support, pour que la notice puisse nommer
+            # les etapes concernees (US-03). Donnee deja calculee, pas un recalcul.
+            "flottantes": [[p.x, p.y, p.z] for p in pieces_flottantes(voxels=voxels,
+                                                                     placements=placements)],
         },
     }
 

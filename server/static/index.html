@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LLMtoL</title>
+<!--
+  Vue 3 charge par <script> : reactivite reelle sans chaine de build, donc pas de node
+  dans l'image, pas de bundler, pas de package.json. Choix arrete apres comparaison
+  avec React/Vite, Svelte, HTMX et JS natif (voir issue #11).
+  Fond sombre repris de src/bom.py (#2b2d33) : les rendus Blender sont produits sur ce
+  fond, les vignettes s'y fondent au lieu de flotter dans un cadre blanc.
+-->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.5.13/vue.global.prod.min.js"></script>
+<style>
+  :root {
+    --fond: #1b1d22; --carte: #24262c; --carte-haut: #2b2d33;
+    --bord: #353841; --texte: #e8e9ec; --doux: #9a9ea8;
+    --accent: #ffcf3f; --accent-texte: #2a2200;
+    --ok: #4ec37a; --alerte: #e8a33d; --erreur: #e5574f;
+    --rayon: 10px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--fond); color: var(--texte);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .page { max-width: 1060px; margin: 0 auto; padding: 0 16px 64px; }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; flex-wrap: wrap; padding: 24px 0 18px;
+    border-bottom: 1px solid var(--bord); margin-bottom: 28px;
+  }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+  h1 span { color: var(--accent); }
+  .sous { color: var(--doux); font-size: 13px; margin: 4px 0 0; }
+
+  .pastille {
+    display: inline-flex; align-items: center; gap: 7px; font-size: 13px;
+    background: var(--carte); border: 1px solid var(--bord);
+    padding: 6px 12px; border-radius: 999px; color: var(--doux);
+  }
+  .point { width: 8px; height: 8px; border-radius: 50%; background: var(--erreur); }
+  .point.vivant { background: var(--ok); }
+
+  .carte {
+    background: var(--carte); border: 1px solid var(--bord);
+    border-radius: var(--rayon); padding: 20px; margin-bottom: 24px;
+  }
+  h2 { font-size: 15px; margin: 0 0 14px; text-transform: uppercase;
+       letter-spacing: 0.06em; color: var(--doux); font-weight: 600; }
+
+  label { display: block; font-size: 13px; color: var(--doux); margin-bottom: 6px; }
+  textarea, select, input {
+    width: 100%; background: var(--fond); color: var(--texte);
+    border: 1px solid var(--bord); border-radius: 8px; padding: 10px 12px;
+    font: inherit; resize: vertical;
+  }
+  textarea:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .ligne { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 14px; align-items: flex-end; }
+  .ligne > div { flex: 1 1 150px; }
+
+  button {
+    background: var(--accent); color: var(--accent-texte); border: 0;
+    border-radius: 8px; padding: 11px 20px; font: inherit; font-weight: 600;
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) { filter: brightness(1.08); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.discret {
+    background: transparent; color: var(--doux); border: 1px solid var(--bord);
+    font-weight: 500; padding: 8px 14px;
+  }
+  button.discret:hover:not(:disabled) { color: var(--texte); border-color: var(--doux); }
+
+  .bandeau {
+    border-radius: 8px; padding: 12px 14px; font-size: 14px; margin-bottom: 18px;
+    border: 1px solid;
+  }
+  .bandeau.alerte { background: #3a2f16; border-color: #6b5520; color: #f2d79a; }
+  .bandeau.erreur { background: #3a1f1d; border-color: #7a3630; color: #f2b3ae; }
+
+  .barre {
+    height: 8px; background: var(--fond); border: 1px solid var(--bord);
+    border-radius: 999px; overflow: hidden; margin: 10px 0 6px;
+  }
+  .barre > i { display: block; height: 100%; background: var(--accent);
+               transition: width .4s ease; }
+  /* Rayures animees : signale une etape EN COURS dont on ne connait pas
+     l'avancement chiffre, au lieu de faire semblant avec un pourcentage. */
+  .barre.indetermine > i {
+    width: 100%; opacity: .35;
+    background: repeating-linear-gradient(90deg, var(--accent) 0 14px,
+                                          transparent 14px 28px);
+    animation: defile 1s linear infinite;
+  }
+  @keyframes defile { to { background-position: 28px 0; } }
+  .progres { display: flex; justify-content: space-between; gap: 12px;
+             font-size: 13px; color: var(--doux); }
+  .progres b { color: var(--texte); font-weight: 600; }
+
+  .grille {
+    display: grid; gap: 16px;
+    grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));
+  }
+  .variante {
+    background: var(--carte-haut); border: 2px solid var(--bord);
+    border-radius: var(--rayon); overflow: hidden; display: flex; flex-direction: column;
+  }
+  .variante.retenue { border-color: var(--accent); }
+  .variante img {
+    width: 100%; aspect-ratio: 1; object-fit: contain;
+    background: #2b2d33; display: block; cursor: zoom-in;
+  }
+  .variante .vide {
+    aspect-ratio: 1; display: grid; place-items: center;
+    color: var(--doux); font-size: 13px; text-align: center; padding: 12px;
+  }
+  .variante .bas { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .chiffres { display: flex; gap: 12px; font-size: 13px; color: var(--doux); flex-wrap: wrap; }
+  .chiffres b { color: var(--texte); font-weight: 600; }
+
+  .jobs { display: flex; flex-direction: column; gap: 10px; }
+  .job {
+    display: flex; gap: 14px; align-items: center;
+    background: var(--carte); border: 1px solid var(--bord);
+    border-radius: var(--rayon); padding: 12px; cursor: pointer;
+  }
+  .job:hover { border-color: var(--doux); }
+  .job.rate { border-left: 3px solid var(--erreur); }
+  .job img, .job .miniature-vide {
+    width: 64px; height: 64px; flex: 0 0 64px; border-radius: 7px;
+    object-fit: contain; background: #2b2d33;
+  }
+  .job .infos { flex: 1; min-width: 0; }
+  .job .texte {
+    margin: 0 0 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .job .meta { font-size: 12.5px; color: var(--doux); }
+
+  .etat {
+    font-size: 12px; padding: 3px 9px; border-radius: 999px;
+    border: 1px solid var(--bord); color: var(--doux); white-space: nowrap;
+  }
+  .etat.travaille { color: var(--accent); border-color: #6b5520; }
+  .etat.fini { color: var(--ok); border-color: #2d6b45; }
+  .etat.rate { color: var(--erreur); border-color: #7a3630; }
+
+  .detail { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+  .detail img { width: 100%; background: #2b2d33; border-radius: 8px; display: block; }
+  .legende { font-size: 12px; color: var(--doux); text-align: center; margin-top: 5px; }
+
+  .avertissements { list-style: none; padding: 0; margin: 12px 0 0; font-size: 13.5px; }
+  .avertissements li { padding: 5px 0 5px 20px; position: relative; color: #f2d79a; }
+  .avertissements li::before { content: "!"; position: absolute; left: 4px; font-weight: 700; }
+
+  .loupe {
+    position: fixed; inset: 0; background: #000c; display: grid; place-items: center;
+    padding: 24px; z-index: 10; cursor: zoom-out;
+  }
+  .loupe img { max-width: min(760px, 100%); max-height: 85vh; border-radius: 10px; }
+  .vide-doux { color: var(--doux); font-size: 14px; }
+  @media (max-width: 560px) { .ligne > div { flex: 1 1 100%; } }
+</style>
+</head>
+<body>
+<div id="app" class="page">
+
+  <header>
+    <div>
+      <h1>LLM<span>to</span>L</h1>
+      <p class="sous">Décris un objet, obtiens un modèle LEGO en vraies pièces.</p>
+    </div>
+    <span class="pastille">
+      <span class="point" :class="{ vivant: statut.agent_actif }"></span>
+      {{ statut.agent_actif ? 'Agent ' + statut.agent + ' actif' : 'Aucun agent actif' }}
+    </span>
+  </header>
+
+  <div v-if="!statut.agent_actif" class="bandeau alerte">
+    Aucun agent de génération n'est actif. Lance <code>python agent.py</code> sur la
+    machine où sont installés Blender et LM Studio : l'API ne peut pas générer elle-même.
+  </div>
+  <div v-if="erreur" class="bandeau erreur">{{ erreur }}</div>
+
+  <!-- Soumission -->
+  <section class="carte">
+    <h2>Nouveau modèle</h2>
+    <label for="p">Qu'est-ce qu'on construit ?</label>
+    <textarea id="p" v-model="prompt" rows="3"
+      placeholder="Un phare blanc avec une lanterne rouge au sommet."></textarea>
+    <div class="ligne">
+      <div>
+        <label for="t">Taille</label>
+        <select id="t" v-model="taille">
+          <option value="">au choix du modèle</option>
+          <option value="petite">petite</option>
+          <option value="moyenne">moyenne</option>
+          <option value="grande">grande</option>
+        </select>
+      </div>
+      <div>
+        <label for="n">Variantes à proposer</label>
+        <select id="n" v-model.number="nVariantes">
+          <option v-for="k in [1,2,3,4,5,6]" :key="k" :value="k">{{ k }}</option>
+        </select>
+      </div>
+      <div style="flex: 0 0 auto;">
+        <button @click="envoyer" :disabled="!prompt.trim() || !statut.agent_actif || envoi">
+          {{ envoi ? 'Envoi…' : 'Générer' }}
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Job en cours : avancement, puis ecran de choix -->
+  <section v-if="actif" class="carte">
+    <h2>
+      {{ actif.status === 'a_choisir' ? 'Choisis ta variante' : 'Génération en cours' }}
+    </h2>
+    <p class="sous" style="margin-bottom:4px">{{ actif.prompt }}</p>
+
+    <div v-if="actif.status !== 'a_choisir'" style="margin-bottom:18px">
+      <div class="barre" :class="{ indetermine: pourcent(actif) === null }">
+        <i v-if="pourcent(actif) !== null" :style="{ width: pourcent(actif) + '%' }"></i>
+        <i v-else></i>
+      </div>
+      <div class="progres">
+        <span>{{ libelleAvancement(actif) }}</span>
+        <span v-if="pourcent(actif) !== null"><b>{{ pourcent(actif) }}%</b></span>
+      </div>
+    </div>
+
+    <div v-if="actif.variantes.length" class="grille">
+      <div v-for="v in actif.variantes" :key="v.id"
+           class="variante" :class="{ retenue: v.is_chosen }">
+        <img v-if="v.a_un_rendu" :src="'/api/variantes/' + v.id + '/render/iso'"
+             :alt="'Variante ' + v.indice" @click="loupe = '/api/variantes/' + v.id + '/render/iso'">
+        <div v-else class="vide">
+          {{ v.error_message ? 'echec' : 'rendu en cours...' }}
+        </div>
+        <div class="bas">
+          <div class="chiffres">
+            <span><b>{{ v.n_pieces ?? '—' }}</b> pièces</span>
+            <span>score <b>{{ v.score ?? '—' }}</b></span>
+          </div>
+          <button v-if="actif.status === 'a_choisir' && v.a_un_rendu"
+                  @click="choisir(v)" :disabled="choix">
+            Choisir celle-ci
+          </button>
+        </div>
+      </div>
+    </div>
+    <p v-else class="vide-doux">Planification en cours, les variantes vont apparaître ici.</p>
+  </section>
+
+  <!-- Detail d'un job termine -->
+  <section v-if="ouvert" class="carte">
+    <h2>{{ ouvert.prompt }}</h2>
+    <div v-if="retenueDe(ouvert)" class="detail">
+      <div v-for="vue in ['iso','top','front','right']" :key="vue">
+        <img :src="'/api/variantes/' + retenueDe(ouvert).id + '/render/' + vue"
+             :alt="vue" @click="loupe = '/api/variantes/' + retenueDe(ouvert).id + '/render/' + vue">
+        <p class="legende">{{ vue }}</p>
+      </div>
+    </div>
+
+    <ul v-if="avertissements(ouvert).length" class="avertissements">
+      <li v-for="(a, i) in avertissements(ouvert)" :key="i">{{ a }}</li>
+    </ul>
+    <p v-else-if="retenueDe(ouvert)" class="sous" style="margin-top:12px">
+      Modèle d'un seul tenant, posé au sol, rien qui flotte.
+    </p>
+
+    <div class="ligne">
+      <div style="flex:0 0 auto">
+        <button v-if="ouvert.a_un_pdf" @click="telecharger(ouvert)">Télécharger la notice PDF</button>
+        <span v-else-if="enCours(ouvert)" class="vide-doux">
+          Notice PDF en préparation<template v-if="ouvert.etape"> &mdash; {{ ouvert.etape }}</template>&hellip;
+        </span>
+        <span v-else class="vide-doux">Pas de notice PDF pour ce modèle.</span>
+      </div>
+      <div style="flex:0 0 auto">
+        <button class="discret" @click="ouvert = null">Fermer</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Historique -->
+  <section class="carte">
+    <h2>Historique</h2>
+    <div v-if="jobs.length" class="jobs">
+      <div v-for="j in jobs" :key="j.id" class="job" :class="{ rate: j.status === 'echec' }"
+           @click="ouvert = (ouvert && ouvert.id === j.id) ? null : j">
+        <img v-if="j.variante_retenue" :src="'/api/variantes/' + j.variante_retenue + '/render/iso'" alt="">
+        <div v-else class="miniature-vide"></div>
+        <div class="infos">
+          <p class="texte">{{ j.prompt }}</p>
+          <p class="meta">
+            {{ dateCourte(j.created_at) }}
+            <template v-if="j.n_pieces"> &middot; {{ j.n_pieces }} pièces</template>
+            <template v-if="j.error_message"> &middot; {{ j.error_message }}</template>
+          </p>
+        </div>
+        <span class="etat" :class="classeEtat(j.status)">{{ libelle(j.status) }}</span>
+        <button class="discret" @click.stop="supprimer(j)">Supprimer</button>
+      </div>
+    </div>
+    <p v-else class="vide-doux">Rien encore. Lance une première génération ci-dessus.</p>
+  </section>
+
+  <div v-if="loupe" class="loupe" @click="loupe = null"><img :src="loupe" alt=""></div>
+</div>
+
+<script>
+const LIBELLES = {
+  en_attente: "en attente", en_cours: "génération", a_choisir: "à choisir",
+  en_finition: "finition", terminee: "terminé", echec: "échec",
+};
+// Statuts pour lesquels il reste quelque chose a attendre : tant qu'il y en a un,
+// l'interface interroge l'API plus souvent.
+const EN_COURS = ["en_attente", "en_cours", "a_choisir", "en_finition"];
+
+Vue.createApp({
+  data() {
+    return {
+      prompt: "", taille: "", nVariantes: 4,
+      jobs: [], statut: { agent_actif: false, agent: null },
+      ouvert: null, loupe: null, erreur: "", envoi: false, choix: false,
+    };
+  },
+  computed: {
+    // Le job en cours est le plus recent qui n'est ni termine ni en echec.
+    // Priorite a ce qui attend l'utilisateur, puis a ce qui travaille vraiment, et
+    // seulement ensuite a ce qui patiente. Sans cet ordre, un job en file masquait
+    // celui que l'agent etait en train de traiter, et l'interface semblait figee.
+    actif() {
+      const enCours = ["en_cours", "en_finition"];
+      return this.jobs.find(j => j.status === "a_choisir")
+          || this.jobs.find(j => enCours.includes(j.status))
+          || this.jobs.find(j => j.status === "en_attente")
+          || null;
+    },
+  },
+  methods: {
+    async api(url, options) {
+      const r = await fetch(url, options);
+      if (!r.ok) {
+        let detail = r.statusText;
+        try { detail = (await r.json()).detail || detail; } catch (e) { /* corps non JSON */ }
+        throw new Error(detail);
+      }
+      return r.status === 204 ? null : r.json();
+    },
+    async rafraichir() {
+      try {
+        const [statut, liste] = await Promise.all([
+          this.api("/api/status"), this.api("/api/jobs?limit=30"),
+        ]);
+        this.statut = statut;
+        this.jobs = liste.jobs;
+        // Garde le detail ouvert a jour (le PDF arrive apres le choix).
+        if (this.ouvert) {
+          this.ouvert = this.jobs.find(j => j.id === this.ouvert.id) || null;
+        }
+      } catch (e) {
+        this.erreur = "API injoignable : " + e.message;
+        return;
+      }
+      this.erreur = "";
+    },
+    async envoyer() {
+      this.envoi = true;
+      try {
+        await this.api("/api/jobs", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: this.prompt, taille: this.taille || null, n_variantes: this.nVariantes,
+          }),
+        });
+        this.prompt = "";
+        await this.rafraichir();
+      } catch (e) { this.erreur = e.message; }
+      this.envoi = false;
+    },
+    async choisir(v) {
+      this.choix = true;
+      try {
+        await this.api(`/api/jobs/${this.actif.id}/choose`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ variante_id: v.id }),
+        });
+        await this.rafraichir();
+      } catch (e) { this.erreur = e.message; }
+      this.choix = false;
+    },
+    async supprimer(j) {
+      try {
+        await this.api(`/api/jobs/${j.id}`, { method: "DELETE" });
+        if (this.ouvert && this.ouvert.id === j.id) this.ouvert = null;
+        await this.rafraichir();
+      } catch (e) { this.erreur = e.message; }
+    },
+    telecharger(j) { window.location = `/api/jobs/${j.id}/pdf`; },
+    retenueDe(j) { return (j.variantes || []).find(v => v.is_chosen) || null; },
+    // "en preparation" ne doit s'afficher que si quelque chose se prepare vraiment :
+    // sur un job termine sans PDF, ce serait une attente qui ne finit jamais.
+    enCours(j) { return EN_COURS.includes(j.status); },
+
+    // null = avancement inconnu : l'interface montre une barre indeterminee plutot
+    // qu'un pourcentage invente.
+    pourcent(j) {
+      if (!j.etape_total) return null;
+      return Math.min(100, Math.round((j.etape_fait / j.etape_total) * 100));
+    },
+
+    // Nombre de jobs que l'agent traitera avant celui-ci.
+    placeDansLaFile(j) {
+      return this.jobs.filter(
+        a => a.created_at < j.created_at
+          && ["en_attente", "en_cours", "en_finition"].includes(a.status)).length;
+    },
+
+    libelleAvancement(j) {
+      if (j.status === "en_attente") {
+        const devant = this.placeDansLaFile(j);
+        if (!devant) return "en attente de l'agent";
+        return `en attente — ${devant} génération(s) avant celle-ci`;
+      }
+      const etape = j.etape || "en cours";
+      if (j.etape_total) return `${etape} — ${j.etape_fait} / ${j.etape_total}`;
+      return etape;
+    },
+    avertissements(j) {
+      // Traduit les metriques du validateur en phrases lisibles. Le calcul est deja
+      // fait cote Python, ici on ne fait que le dire en francais.
+      const v = this.retenueDe(j);
+      if (!v) return [];
+      // Formulations alignees sur src/validator.resume_constructibilite : le
+      // conteneur de l'API ne voit pas src/, d'ou cette reecriture en JavaScript.
+      const out = [];
+      if (v.n_components > 1)
+        out.push(`Le modèle est en ${v.n_components} morceaux séparés : il ne tiendra pas d'un seul tenant.`);
+      if (v.z_min > 0)
+        out.push(`La partie la plus basse flotte à ${v.z_min} plate(s) au-dessus du sol au lieu de reposer dessus.`);
+      if (v.n_floating > 0)
+        out.push(`${v.n_floating} pièce(s) n'ont rien juste en dessous : il faudra les maintenir en place le temps de poser la suite.`);
+      if (v.fill_rate > 0.85)
+        out.push(`Le modèle est rempli à ${Math.round(v.fill_rate * 100)}% : c'est quasiment un bloc plein, et il consommera beaucoup de pièces.`);
+      return out;
+    },
+    libelle(s) { return LIBELLES[s] || s; },
+    classeEtat(s) {
+      if (s === "terminee") return "fini";
+      if (s === "echec") return "rate";
+      return EN_COURS.includes(s) ? "travaille" : "";
+    },
+    dateCourte(iso) {
+      if (!iso) return "";
+      return new Date(iso).toLocaleString("fr-FR",
+        { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+    },
+  },
+  mounted() {
+    this.rafraichir();
+    // 2,5 s quand quelque chose tourne, 15 s au repos : inutile de marteler l'API
+    // quand il n'y a rien a suivre.
+    setInterval(() => {
+      if (this.actif || !this.statut.agent_actif) this.rafraichir();
+    }, 2500);
+    setInterval(() => { if (!this.actif) this.rafraichir(); }, 15000);
+  },
+}).mount("#app");
+</script>
+</body>
+</html>

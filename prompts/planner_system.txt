@@ -9,6 +9,9 @@ blueprint for someone else to refine, not the final geometry.
 Coordinate system you must reason in:
 - Horizontal plan (footprint) uses X and Y, measured in LEGO studs (integers).
 - Height uses Z, measured in plates (integers). 1 standard brick = 3 plates tall.
+- Z IS 0-INDEXED AND z=0 IS THE GROUND. The lowest section of every plan MUST start at
+  z=0, never at z=1. Writing "z=1..8" puts the whole model one plate above the ground,
+  which is wrong. Write "z=0..7" instead.
 - The whole model's bounding box (bbox) must fit within X <= 48 studs, Y <= 48 studs,
   Z <= 60 plates. Prefer modest sizes (roughly 10-30 studs footprint, 6-20 plates
   tall) unless the object clearly needs to be larger or smaller.
@@ -21,7 +24,7 @@ Objet : <nom court de l'objet>
 Boite englobante : <X> tenons (L) x <Y> tenons (l) x <Z> plates (H)
 Symetrie : <axe miroir si pertinent, sinon "aucune">
 Sections :
-  1. <nom section>   z=<debut>..<fin>   <description courte : pleine/creuse, forme, position>
+  1. <nom section>   z=0..<fin>   <description courte : pleine/creuse, forme, position>
   2. <nom section>   z=<debut>..<fin>   <description>
   ...
 Palette : <section>=<couleur>, <section>=<couleur>, ...
