@@ -232,3 +232,88 @@ def test_notice_reste_valide_sans_rapport(tmp_path):
     html = out.read_text(encoding="utf-8")
     assert "Avant de commencer" not in html
     assert "<!doctype html>" in html.lower()
+
+
+# --- Encart des pieces : aucun vide blanc -----------------------------------------
+
+def _encart(tmp_path, n_pieces):
+    """Compose un encart de n pieces sur un fond sombre, et rend (image, geometrie)."""
+    import math
+
+    from PIL import Image
+
+    from src.instructions import compose_step_image
+
+    fond = (43, 45, 51)
+    rendu = tmp_path / "etape.png"
+    Image.new("RGB", (600, 600), fond).save(rendu)
+    pieces = []
+    for i in range(n_pieces):
+        p = tmp_path / f"p{i}.png"
+        Image.new("RGB", (100, 100), (200, 60, 60)).save(p)
+        pieces.append((str(p), i + 1))
+
+    out = tmp_path / "compose.png"
+    assert compose_step_image(str(rendu), pieces, str(out))
+    im = Image.open(out).convert("RGB")
+    W, _ = im.size
+    colonnes = min(n_pieces, 3 if n_pieces <= 3 else math.ceil(math.sqrt(n_pieces)))
+    lignes = math.ceil(n_pieces / colonnes)
+    cell = min(int(W * 0.16), int(W * 0.34) // colonnes)
+    marge = int(W * 0.02)
+    return im, {"W": W, "colonnes": colonnes, "lignes": lignes, "cell": cell,
+                "marge": marge, "fond": fond}
+
+
+def test_encart_sans_vide_blanc(tmp_path):
+    """Une grille incomplete ne doit pas laisser de bloc blanc.
+
+    Defaut constate en reel : avec 5 ou 7 pieces differentes sur 3 colonnes, la
+    derniere ligne etait incomplete et le fond blanc de l'encart restait visible.
+    Ca se lisait comme une piece manquante. Centrer la derniere ligne deplacait le
+    vide au lieu de le supprimer, d'ou ce test qui verifie l'ABSENCE de blanc et non
+    sa position.
+    """
+    for n in (5, 7, 8):
+        dossier = tmp_path / f"n{n}"
+        dossier.mkdir()
+        im, g = _encart(dossier, n)
+        dans_derniere = min(g["colonnes"], n - (g["lignes"] - 1) * g["colonnes"])
+        assert dans_derniere < g["colonnes"], f"{n} pieces : la grille devrait etre incomplete"
+
+        # Centre de la premiere cellule absente de la derniere ligne.
+        x = g["W"] - g["cell"] * g["colonnes"] - g["marge"] + g["cell"] // 2
+        y = g["marge"] + g["cell"] * (g["lignes"] - 1) + g["cell"] // 2
+        assert im.getpixel((x, y)) == g["fond"], (
+            f"{n} pieces : du blanc subsiste la ou aucune piece n'est posee")
+
+
+def test_encart_grille_pleine_reste_intact(tmp_path):
+    """Les cas qui marchaient deja ne doivent pas regresser."""
+    for n in (3, 4, 6, 9):
+        dossier = tmp_path / f"n{n}"
+        dossier.mkdir()
+        im, g = _encart(dossier, n)
+        assert n % g["colonnes"] == 0, f"{n} pieces : la grille devrait etre pleine"
+        # Chaque cellule doit porter une vignette (rouge), pas le fond.
+        x = g["W"] - g["cell"] * g["colonnes"] - g["marge"] + g["cell"] // 2
+        y = g["marge"] + g["cell"] // 2
+        assert im.getpixel((x, y)) != g["fond"], f"{n} pieces : vignette absente"
+
+
+def test_encart_sans_vignette_rend_le_rendu_brut(tmp_path):
+    from PIL import Image
+
+    from src.instructions import compose_step_image
+
+    rendu = tmp_path / "etape.png"
+    Image.new("RGB", (200, 200), (43, 45, 51)).save(rendu)
+    out = tmp_path / "out.png"
+    assert compose_step_image(str(rendu), [], str(out))
+    assert Image.open(out).convert("RGB").getpixel((100, 100)) == (43, 45, 51)
+
+
+def test_encart_rendu_manquant_signale(tmp_path):
+    from src.instructions import compose_step_image
+
+    assert compose_step_image(str(tmp_path / "inexistant.png"), [], str(tmp_path / "o.png")) is False
