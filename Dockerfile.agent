@@ -1,0 +1,101 @@
+# Agent de generation COMPLET : Blender, l'add-on ImportLDraw et la bibliotheque LDraw.
+#
+# Pourquoi cette image existe : jusqu'ici `docker compose up -d` ne demarrait que la
+# moitie facile (base, API, interface) et toute la moitie difficile restait manuelle —
+# installer Blender, trouver l'add-on, telecharger la bibliotheque LDraw, regler les
+# chemins. Ici tout est fige a une version precise, donc le rendu d'aujourd'hui sera le
+# meme dans six mois.
+#
+# LM STUDIO RESTE SUR L'HOTE. Il tient ~18 Go en memoire et veut le CPU de la machine :
+# l'embarquer n'aurait aucun sens. Le conteneur le joint par host.docker.internal
+# (voir docker-compose.yml).
+#
+# LICENCE DE LA BIBLIOTHEQUE LDRAW : verifiee AVANT d'ecrire ce fichier, et depuis la
+# source livree avec la bibliotheque elle-meme (CAlicense.txt, CAlicense4.txt,
+# CAreadme.txt, et la ligne "0 !LICENSE" que porte chaque .dat). Elle est sous Creative
+# Commons Attribution 2.0 ET 4.0, qui autorisent explicitement la redistribution, y
+# compris dans une image. L'attribution requise est ecrite dans /opt/ldraw/ATTRIBUTION
+# ci-dessous, et rappelee dans le README.
+
+FROM python:3.13-slim
+
+# --- versions figees -------------------------------------------------------------
+# Blender 5.1.1 : LA MEME que celle installee sur l'hote, pour que les deux chemins
+# produisent le meme rendu. ImportLDraw 1.2.3 : la version effectivement installee sur
+# l'hote (relevee dans son __init__.py), ecrite pour Blender 2.81 mais fonctionnelle —
+# c'est elle qui impose d'utiliser Cycles plutot qu'EEVEE (voir README).
+ARG BLENDER_VERSION=5.1.1
+ARG BLENDER_SERIE=5.1
+ARG IMPORTLDRAW_VERSION=1.2.3
+
+# libx* / libgl : Blender les exige meme en --background. chromium : conversion de la
+# notice HTML en PDF (config.NAVIGATEURS_PDF le trouve tout seul sous /usr/bin).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl xz-utils unzip ca-certificates git \
+        libx11-6 libxi6 libxxf86vm1 libxfixes3 libxrender1 libxkbcommon0 \
+        libgl1 libsm6 libice6 libfreetype6 \
+        chromium \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- Blender ---------------------------------------------------------------------
+RUN curl -fsSL "https://download.blender.org/release/Blender${BLENDER_SERIE}/blender-${BLENDER_VERSION}-linux-x64.tar.xz" \
+      -o /tmp/blender.tar.xz \
+ && mkdir -p /opt/blender \
+ && tar -xJf /tmp/blender.tar.xz -C /opt/blender --strip-components=1 \
+ && rm /tmp/blender.tar.xz \
+ && ln -s /opt/blender/blender /usr/local/bin/blender
+
+# --- add-on ImportLDraw ----------------------------------------------------------
+# DANS LE PROFIL UTILISATEUR, et pas dans les scripts de l'installation. Verifie
+# empiriquement, apres echec : pose sous /opt/blender/5.1/scripts/addons, l'add-on est
+# bien dans les chemins annonces par bpy.utils.script_paths(subdir='addons') et
+# pourtant addon_enable repond "No module named 'io_scene_importldraw'". Blender 5.1 ne
+# charge les add-ons HERITES (ceux d'avant le systeme d'extensions) que depuis
+# bpy.utils.user_resource('SCRIPTS'). C'est d'ailleurs la que se trouve celui de l'hote.
+#
+# L'image tourne en root, d'ou /root/.config. Changer d'utilisateur demanderait de
+# deplacer ce dossier avec lui.
+RUN curl -fsSL "https://github.com/TobyLobster/ImportLDraw/archive/refs/tags/v${IMPORTLDRAW_VERSION}.tar.gz" \
+      -o /tmp/addon.tar.gz \
+ && mkdir -p "/root/.config/blender/${BLENDER_SERIE}/scripts/addons/io_scene_importldraw" \
+ && tar -xzf /tmp/addon.tar.gz -C "/root/.config/blender/${BLENDER_SERIE}/scripts/addons/io_scene_importldraw" --strip-components=1 \
+ && rm /tmp/addon.tar.gz \
+ && test -f "/root/.config/blender/${BLENDER_SERIE}/scripts/addons/io_scene_importldraw/__init__.py"
+
+# --- bibliotheque LDraw ----------------------------------------------------------
+RUN curl -fsSL "https://library.ldraw.org/library/updates/complete.zip" -o /tmp/ldraw.zip \
+ && unzip -q /tmp/ldraw.zip -d /opt \
+ && rm /tmp/ldraw.zip \
+ && test -f /opt/ldraw/LDConfig.ldr \
+ && printf '%s\n' \
+    'Bibliotheque de pieces LDraw, (c) LDraw.org et ses contributeurs.' \
+    'Redistribuee sous Creative Commons Attribution 2.0 et 4.0 International.' \
+    'Textes complets : CAlicense.txt, CAlicense4.txt, CAreadme.txt (ce dossier).' \
+    'https://www.ldraw.org/' \
+    > /opt/ldraw/ATTRIBUTION
+
+WORKDIR /app
+
+COPY requirements.txt requirements-server.txt ./
+RUN pip install --no-cache-dir -r requirements.txt -r requirements-server.txt
+
+COPY config.py pipeline.py agent.py lego.py ./
+COPY src/ ./src/
+COPY server/ ./server/
+COPY tools/ ./tools/
+COPY prompts/ ./prompts/
+
+# Point de montage des sorties. Cree ici pour que l'image fonctionne AUSSI sans
+# montage (un `docker run` seul), et pas uniquement sous docker compose.
+RUN mkdir -p /app/outputs
+
+ENV PYTHONUNBUFFERED=1 \
+    LEGO_BLENDER_EXE=/usr/local/bin/blender \
+    LEGO_LDRAW_DIR=/opt/ldraw \
+    LEGO_NAVIGATEUR_PDF=/usr/bin/chromium \
+    LEGO_AGENT_NAME=agent-conteneur
+
+# --une-fois absent : l'agent boucle. --skip-env-check absent non plus : il DOIT
+# verifier LM Studio au demarrage, c'est ce qui evite de transformer chaque job en
+# dechet quand le piege du Structured Output est arme.
+CMD ["python", "-u", "agent.py"]

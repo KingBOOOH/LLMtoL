@@ -222,10 +222,15 @@ def couleur_bricklink(nom_interne):
     return BRICKLINK_COLORS.get(nom_interne)
 
 
+# $LEGO_LDRAW_DIR d'abord : c'est par la que le conteneur de generation designe la
+# bibliotheque livree dans son image (/opt/ldraw). Les emplacements usuels de l'hote
+# suivent, inchanges — personne n'a a reorganiser ses fichiers.
 LDRAW_CANDIDATE_DIRS = [
+    "$LEGO_LDRAW_DIR",
     "~/ldraw", "C:/ldraw", "%APPDATA%/LDraw",
     "C:/Program Files/LDraw", "C:/Program Files (x86)/LDraw",
     "~/Documents/LDraw", "~/OneDrive/Documents/LDraw",
+    "/opt/ldraw", "/usr/share/ldraw",
 ]
 
 
@@ -236,6 +241,10 @@ def _find_ldraw_library():
     valides — ne force jamais l'utilisateur a reorganiser ses fichiers)."""
     for d in LDRAW_CANDIDATE_DIRS:
         base = os.path.expandvars(os.path.expanduser(d))
+        # expandvars laisse "$NOM" tel quel quand la variable n'existe pas : sans ce
+        # garde-fou on irait chercher un dossier reellement nomme "$LEGO_LDRAW_DIR".
+        if "$" in base or "%" in base:
+            continue
         if os.path.isfile(os.path.join(base, "LDConfig.ldr")):
             return base
         if os.path.isdir(base):

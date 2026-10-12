@@ -180,6 +180,32 @@ Verification visuelle : pyramide rendue avant/apres, gradins devenus rampes, ori
 correctes sur les quatre faces. LeoCAD n'est pas installe, le controle est passe par un
 rendu Blender.
 
+Generation en conteneur (Dockerfile.agent, profil compose "conteneur") : image de 1.07 Go
+embarquant Blender 5.1.1, ImportLDraw 1.2.3 et la bibliotheque LDraw, versions figees.
+LM Studio RESTE SUR L'HOTE, joint par host.docker.internal. Le mode hote est intact :
+sans le profil, rien ne change. Le profil evite que deux agents demarrent ensemble et se
+disputent LM Studio.
+
+Mesure : rendu d'un meme modele 65 s sur l'hote, 36 s en conteneur (le conteneur est donc
+PLUS RAPIDE, a l'inverse de ce qui etait attendu), images equivalentes (682762 vs 682703
+octets).
+
+Deux pieges, verifies empiriquement :
+  - Blender 5.1 ne charge PAS les add-ons herites depuis son dossier d'installation. Pose
+    sous /opt/blender/5.1/scripts/addons, l'add-on figure pourtant dans
+    bpy.utils.script_paths(subdir='addons') et addon_enable repond quand meme "No module
+    named". Il faut bpy.utils.user_resource('SCRIPTS').
+  - l'add-on cherchait la bibliotheque dans ses PREFERENCES ENREGISTREES : correct sur un
+    poste configure a la main, "Could not find LDraw Part Library" partout ailleurs. Le
+    chemin resolu par src.catalog est desormais transmis a Blender par LEGO_LDRAW_DIR et
+    passe explicitement en ldrawPath. Vaut aussi pour l'hote avec un profil Blender neuf.
+
+config.py lit toutes ses valeurs dans l'environnement, les valeurs ecrites restant les
+defauts de l'hote Windows (LEGO_BLENDER_EXE, LM_STUDIO_URL, LM_STUDIO_MODEL,
+LEGO_NAVIGATEUR_PDF). src.catalog cherche la bibliotheque dans $LEGO_LDRAW_DIR d'abord.
+Ne JAMAIS faire d'un chemin de conteneur un defaut : ca marcherait en conteneur et
+casserait le poste de l'utilisateur.
+
 Problèmes connus à surveiller
 
 LM Studio réinjecte silencieusement le system prompt et le Structured Output configurés
@@ -406,7 +432,7 @@ Prérequis vérifiables d'un coup : python tools/check_env.py
 
 Commandes utiles
 
-python -m pytest tests/ -q                      tests (206)
+python -m pytest tests/ -q                      tests (220)
 python -m ruff check .                          linter (pip install -r requirements-dev.txt)
 python tools/check_env.py                       diagnostic environnement
 python lego.py "<prompt>"                       UN modèle complet, en une commande

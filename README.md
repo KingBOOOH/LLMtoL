@@ -238,6 +238,59 @@ C'est la seule matière pour comprendre plus tard *ce que* le modèle rate.
 
 La nomenclature n'est **pas** stockée : c'est une fonction pure de `design_json`.
 
+### Tout démarrer en une commande
+
+```powershell
+docker compose --profile conteneur up -d     # base, API, interface ET génération
+```
+
+L'image de l'agent embarque **Blender 5.1.1**, l'add-on **ImportLDraw 1.2.3** et la
+**bibliothèque LDraw**, à des versions figées. Il n'y a plus rien à installer à la main.
+
+**LM Studio reste sur l'hôte** : il tient ~18 Go en mémoire et veut le CPU de la machine,
+l'embarquer n'aurait aucun sens. Le conteneur le joint par `host.docker.internal`.
+
+Le mode hôte reste entier. Sans le profil, `docker compose up -d` se comporte exactement
+comme avant et `python agent.py` continue de fonctionner — c'est voulu, les deux chemins
+ont leur usage : l'hôte pour développer, le conteneur pour installer ou montrer. Le
+profil évite surtout que deux agents démarrent ensemble et se disputent LM Studio.
+
+#### Ce que ça coûte, mesuré
+
+| | |
+|---|---|
+| taille de l'image | **1,07 Go** |
+| rendu d'un même modèle, sur l'hôte | 65 s |
+| rendu du même modèle, en conteneur | **36 s** |
+
+Le conteneur est donc **plus rapide**, à l'inverse de ce qu'on attendait. Et les deux
+images produites sont équivalentes à l'octet près ou presque (682 762 contre
+682 703 octets) : la reproductibilité est réelle, pas supposée.
+
+#### La licence, vérifiée avant tout le reste
+
+Redistribuer la bibliothèque LDraw dans une image n'allait pas de soi. La question a été
+tranchée **avant** d'écrire la moindre ligne, et depuis la source livrée avec la
+bibliothèque elle-même — `CAlicense.txt`, `CAlicense4.txt`, `CAreadme.txt`, et la ligne
+`0 !LICENSE` que porte chacun de ses fichiers de pièce. Elle est sous **Creative Commons
+Attribution 2.0 et 4.0**, qui autorisent explicitement la redistribution. L'attribution
+qu'elles exigent est écrite dans `/opt/ldraw/ATTRIBUTION` de l'image.
+
+#### Deux pièges rencontrés, et leur cause
+
+**Blender 5.1 ne charge pas les add-ons hérités depuis son dossier d'installation.**
+Posé sous `/opt/blender/5.1/scripts/addons`, l'add-on apparaît pourtant dans les chemins
+que `bpy.utils.script_paths(subdir='addons')` annonce — et `addon_enable` répond malgré
+tout « No module named 'io_scene_importldraw' ». Il faut le poser dans
+`bpy.utils.user_resource('SCRIPTS')`, c'est-à-dire là où se trouve celui de l'hôte.
+
+**L'add-on cherchait la bibliothèque dans ses préférences enregistrées.** Ça marche sur
+un poste configuré à la main, et échoue partout ailleurs sur « Could not find LDraw Part
+Library » — conteneur, profil Blender neuf, autre machine. Le projet sait pourtant où
+elle est (`src.catalog`) : le chemin résolu est désormais transmis à Blender dans
+l'environnement et passé explicitement à l'opérateur d'import. Ce n'est pas qu'un
+correctif de conteneur : il retire une dépendance invisible à un réglage d'interface.
+
 ### Les pentes, et pourquoi une pente n'est pas un pavé
 
 Le catalogue est resté longtemps à 24 pièces sans la moindre pente : tous les toits
@@ -666,7 +719,7 @@ pip install -r requirements-dev.txt
 
 python -m ruff check .        # linter + tri des imports
 python -m ruff check . --fix  # corrige ce qui est sûr
-python -m pytest tests/ -q    # 206 tests
+python -m pytest tests/ -q    # 220 tests
 ```
 
 Le linter garde le jeu de règles **par défaut** de `ruff` plutôt qu'une sélection
@@ -678,7 +731,7 @@ Les captures larges (`except Exception`) qui sont **volontaires** — les fronti
 échec ne doit pas tout emporter — sont marquées une par une par un `noqa` commenté,
 plutôt que désactivées globalement. Une négligence future sera donc signalée.
 
-206 tests, couvrant le schéma DSL, le compilateur, le pavage, le validateur, les
+220 tests, couvrant le schéma DSL, le compilateur, le pavage, le validateur, les
 primitives, la nomenclature, le découpage en étapes, la notice PDF, les règles de
 relance de l'API et la détection du piège LM Studio.
 
