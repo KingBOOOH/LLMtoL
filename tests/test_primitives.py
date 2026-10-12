@@ -129,3 +129,58 @@ def test_dsl_can_express_curved_shapes_exactly():
     for reference in (cylinder(9, 3), sphere(7), ring(9, 3, 2)):
         recompiled = compile_design(_grid_to_layer_ops(reference))
         assert voxel_iou(reference, recompiled) == 1.0
+
+
+# --- IoU tolerant a l'orientation -------------------------------------------------
+
+def test_iou_oriente_tolere_une_rotation():
+    """Un escalier tourne reste un escalier : le prompt n'impose aucune direction.
+
+    C'est ce qui faisait de prim_escalier le pire cas du jeu. voxel_iou recadre sur
+    le contenu mais ne tourne pas : une forme exacte construite dans l'autre sens
+    etait punie comme une erreur.
+    """
+    from src.primitives import build_reference, voxel_iou, voxel_iou_oriente
+
+    ref = build_reference({"shape": "stairs", "params": {"width": 4, "steps": 5}})
+    for k in (1, 2, 3):
+        tourne = np.rot90(ref, k, axes=(0, 1))
+        assert voxel_iou_oriente(ref, tourne) == 1.0, f"rotation {k * 90} deg"
+    # Et la metrique principale, elle, punit bien ces rotations : c'est le constat.
+    assert voxel_iou(ref, np.rot90(ref, 1, axes=(0, 1))) < 1.0
+
+
+def test_iou_oriente_tolere_un_miroir():
+    from src.primitives import build_reference, voxel_iou_oriente
+
+    ref = build_reference({"shape": "stairs", "params": {"width": 4, "steps": 5}})
+    assert voxel_iou_oriente(ref, ref[::-1]) == 1.0
+
+
+def test_iou_oriente_ne_tolere_PAS_le_retournement_vertical():
+    """Le haut et le bas ne sont pas interchangeables : un modele a l'envers ne
+    tiendrait pas debout. Seul le plan horizontal est libre."""
+    from src.primitives import build_reference, voxel_iou_oriente
+
+    ref = build_reference({"shape": "stairs", "params": {"width": 4, "steps": 5}})
+    a_lenvers = ref[:, :, ::-1]
+    assert voxel_iou_oriente(ref, a_lenvers) < 1.0
+
+
+def test_iou_oriente_toujours_superieur_ou_egal():
+    """La metrique secondaire ne peut pas etre plus severe que la principale."""
+    from src.primitives import build_reference, voxel_iou, voxel_iou_oriente
+
+    ref = build_reference({"shape": "stairs", "params": {"width": 4, "steps": 5}})
+    for autre in ({"shape": "cube", "params": {"side": 5}},
+                  {"shape": "pyramid", "params": {"base": 6, "height": 4}},
+                  {"shape": "stairs", "params": {"width": 4, "steps": 5}}):
+        g = build_reference(autre)
+        assert voxel_iou_oriente(ref, g) >= voxel_iou(ref, g)
+
+
+def test_iou_oriente_sur_forme_identique():
+    from src.primitives import build_reference, voxel_iou_oriente
+
+    ref = build_reference({"shape": "cube", "params": {"side": 6}})
+    assert voxel_iou_oriente(ref, ref) == 1.0

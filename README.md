@@ -265,6 +265,40 @@ Opérations : `box`, `carve`, `column`, `layer` (grille ASCII), `cylinder`, `sph
 Le schéma JSON est le principal outil d'alignement : bien borné, il rend le modèle
 *incapable* d'émettre une coordonnée aberrante ou une couleur hors palette.
 
+### Ce que mesure l'IoU, et ce qu'il ne mesure pas
+
+La métrique compare la forme produite à une référence calculée analytiquement. Elle est
+invariante à la translation — un cube correct placé dans un coin n'est pas pénalisé —
+mais **pas à la taille**, ce qui est voulu : un cube 6×6×6 là où on demandait 8×8×8 doit
+l'être.
+
+Elle n'est pas non plus invariante à la **rotation**, et là c'est un problème : les
+prompts du jeu de test n'imposent aucune orientation. « Un escalier de 5 marches » ne dit
+pas vers où il monte.
+
+C'est ce qui faisait de `prim_escalier` le pire cas du jeu, à 0,149. Le diagnostic :
+
+| | IoU |
+|---|---|
+| tel quel | 0,200 |
+| rotation autorisée | 0,333 |
+| hauteur corrigée | 0,429 |
+| **hauteur corrigée + rotation autorisée** | **1,000** |
+
+**La forme était exacte.** Le modèle construit un escalier parfait, tourné de 270°, et
+dont chaque marche fait 3 plates au lieu d'une — il raisonne en briques là où le prompt
+dit « 1 plate ».
+
+D'où `voxel_iou_oriente()` : le meilleur IoU parmi les 8 orientations du plan horizontal.
+Le haut et le bas restent fixes, un modèle à l'envers ne tiendrait pas debout. Elle est
+rapportée **en plus** de l'IoU principal, dans la colonne `iou_oriente` — jamais à sa
+place : remplacer la métrique casserait la comparabilité de tout l'historique de mesures.
+
+La confusion plate/brique, elle, n'est **pas corrigée**. Deux formulations de prompt ont
+été essayées et mesurées : sans effet, 0,200 et 0,198 contre 0,149 de référence. Elles
+ont été retirées — une ligne de prompt qui ne fait rien coûte des tokens et laisse croire
+que le cas est traité.
+
 ### La notice
 
 Le modèle est découpé en étapes d'un **nombre fixe de pièces**, dans l'ordre de montage
@@ -469,7 +503,7 @@ pip install -r requirements-dev.txt
 
 python -m ruff check .        # linter + tri des imports
 python -m ruff check . --fix  # corrige ce qui est sûr
-python -m pytest tests/ -q    # 140 tests
+python -m pytest tests/ -q    # 145 tests
 ```
 
 Le linter garde le jeu de règles **par défaut** de `ruff` plutôt qu'une sélection

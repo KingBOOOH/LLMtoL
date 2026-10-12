@@ -31,7 +31,7 @@ import zlib
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.llm_client import LLMCallError
-from src.primitives import build_reference, voxel_iou
+from src.primitives import build_reference, voxel_iou, voxel_iou_oriente
 
 EVAL_DIR = os.path.dirname(os.path.abspath(__file__))
 RESULTS_DIR = os.path.join(EVAL_DIR, "results")
@@ -55,7 +55,7 @@ def run_one(prompt_text, seed, work_dir, reference=None):
 
     row = {"valid_json": False, "n_pieces": 0, "score": 0.0,
            "n_components": 0, "fill_rate": 0.0, "repairs_used": 0, "iou": "",
-           "z_min": ""}
+           "z_min": "", "iou_oriente": ""}
 
     try:
         from src.designer import design as designer_design
@@ -76,7 +76,10 @@ def run_one(prompt_text, seed, work_dir, reference=None):
             "z_min": metrics.get("z_min", ""),
         })
         if reference is not None:
-            row["iou"] = round(voxel_iou(build_reference(reference), result["voxels"]), 3)
+            cible = build_reference(reference)
+            row["iou"] = round(voxel_iou(cible, result["voxels"]), 3)
+            # Metrique secondaire : les prompts n'imposent aucune orientation.
+            row["iou_oriente"] = round(voxel_iou_oriente(cible, result["voxels"]), 3)
     except (LLMCallError, RuntimeError):
         pass  # row reste invalid_json=False, score 0 ; error.txt deja ecrit par designer.py
 
@@ -121,7 +124,9 @@ def _row_from_existing(work_dir, reference):
            "repairs_used": n_repairs, "iou": "",
            "z_min": metrics.get("z_min", "")}
     if reference is not None:
-        row["iou"] = round(voxel_iou(build_reference(reference), voxels), 3)
+        cible = build_reference(reference)
+        row["iou"] = round(voxel_iou(cible, voxels), 3)
+        row["iou_oriente"] = round(voxel_iou_oriente(cible, voxels), 3)
     return row
 
 
@@ -144,7 +149,7 @@ def run_eval(version, testset_path, n_per_prompt, out_dir, resume=False):
     csv_path = os.path.join(out_dir, f"{version}_{date_tag}.csv")
     fieldnames = ["id", "category", "complexity", "attempt", "seed", "valid_json",
                   "duration_s", "n_pieces", "score", "n_components", "fill_rate",
-                  "repairs_used", "iou", "z_min"]
+                  "repairs_used", "iou", "iou_oriente", "z_min"]
 
     rows = []
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
@@ -198,6 +203,11 @@ def _write_summary(rows, version, path):
     ]
     if avg_iou is not None:
         lines.append(f"- **IoU moyen vs reference : {avg_iou:.3f}** (1.0 = forme exacte)")
+        ori = [float(r["iou_oriente"]) for r in valid_rows
+               if r.get("iou_oriente") not in (None, "")]
+        if ori:
+            lines.append(f"- IoU tolerant a l'orientation : {sum(ori) / len(ori):.3f} "
+                         f"(les prompts n'imposent aucune orientation)")
 
     # Mesure du decalage d'indice z : ligne de base avant correction du prompt =
     # 8 designs sur 26 du jeu primitives ne touchaient pas le sol.

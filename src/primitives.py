@@ -149,6 +149,33 @@ def voxel_iou(grid_a, grid_b):
     return float(np.count_nonzero(pa & pb) / union)
 
 
+def voxel_iou_oriente(grid_a, grid_b):
+    """Meilleur IoU parmi les 8 orientations du plan horizontal.
+
+    Pourquoi cette metrique existe, en plus de voxel_iou : les prompts du jeu de test
+    n'imposent aucune orientation. « Un escalier de 5 marches » ne dit pas vers ou il
+    monte. Or voxel_iou recadre sur le contenu mais ne tourne pas : un escalier
+    parfaitement correct, construit dans l'autre sens, est punі comme une erreur.
+
+    Mesure qui l'a revelee : prim_escalier, le pire cas du jeu. A hauteur corrigee,
+    voxel_iou donne 0.429 et voxel_iou_oriente donne 1.000 — la forme etait exacte, la
+    difference etait une rotation de 270 degres.
+
+    Les 4 rotations et les 2 miroirs portent sur le plan X/Y uniquement : le haut et le
+    bas ne sont PAS interchangeables (un modele a l'envers ne tiendrait pas debout).
+
+    Rapportee EN PLUS de voxel_iou, jamais a sa place : remplacer la metrique
+    principale casserait la comparabilite de tout l'historique de mesures.
+    """
+    meilleur = 0.0
+    for k in range(4):
+        tourne = np.rot90(grid_a, k, axes=(0, 1))
+        for miroir in (False, True):
+            candidat = tourne[::-1] if miroir else tourne
+            meilleur = max(meilleur, voxel_iou(candidat, grid_b))
+    return meilleur
+
+
 def ascii_layers(grid, max_layers=None):
     """Coupe ASCII par couche z (debug rapide, meme format que src.compiler)."""
     x_size, y_size, z_size = grid.shape
