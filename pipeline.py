@@ -45,6 +45,7 @@ from src.ldraw_writer import write_ldr
 from src.llm_client import LLMCallError
 from src.pdf import write_pdf
 from src.planner import plan as make_plan
+from src.wanted_list import write_wanted_list
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SRC_DIR = os.path.join(BASE_DIR, "src")
@@ -113,6 +114,19 @@ def preparer_notice(placements, iter_dir, nom, log_path):
     log_line(log_path,
              f"Nomenclature : {sum(r['quantite'] for r in rows)} pieces, "
              f"{len(rows)} references")
+
+    # Un seul point d'appel pour les trois chemins de generation (lego.py, le lot de
+    # pipeline.py, la phase 2 de agent.py) : tous passent par ici.
+    achetables, absents, avertis = write_wanted_list(
+        rows, os.path.join(iter_dir, "wanted_list.xml"), nom)
+    log_line(log_path,
+             f"Liste d'achat BrickLink : {sum(i['quantite'] for i in achetables)} "
+             f"pieces sur {len(achetables)} references")
+    for phrase in avertis:
+        log_line(log_path, f"  ATTENTION : {phrase}")
+    for m in absents:
+        log_line(log_path, f"  NON COMMANDABLE : {m['quantite']}x {m['ldraw_id']} "
+                           f"({m['couleur']}) — {m['raison']}")
 
     steps_dir = os.path.join(iter_dir, "etapes")
     etape_dirs, etapes = write_step_models(placements, steps_dir, nom)

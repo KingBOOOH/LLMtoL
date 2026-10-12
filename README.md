@@ -238,6 +238,55 @@ C'est la seule matière pour comprendre plus tard *ce que* le modèle rate.
 
 La nomenclature n'est **pas** stockée : c'est une fonction pure de `design_json`.
 
+### La liste d'achat
+
+La nomenclature donne des références **LDraw**. Pour acheter les pièces il faut les
+numéros des boutiques, et `src/bom.py` s'en était délibérément abstenu : pour les pièces
+classiques les deux numéros coïncident *le plus souvent*, et « le plus souvent » ne
+suffit pas.
+
+Cette prudence était justifiée. La correspondance a été vérifiée une par une sur
+bricklink.com — le catalogue de 24 pièces rend l'exercice fini — et **3 pièces sur 24
+portent un numéro différent des deux côtés** :
+
+| LDraw | BrickLink | pourquoi |
+|---|---|---|
+| `3023b` | `3023` | LDraw a renommé la pièce (mise à jour 2024-07), BrickLink non |
+| `3070b` | `3070` | BrickLink liste `3070b` comme numéro *alterné*, pas comme numéro principal |
+| `3069b` | `3069` | idem |
+
+Les couleurs sont pires : les deux systèmes utilisent **les mêmes nombres pour des
+couleurs différentes**. Le code LDraw 8 est *Dark Grey*, le code BrickLink 8 est *Brown*.
+Et BrickLink numérote *Reddish Brown* 88 là où LDraw utilise 70. D'où deux tables
+séparées dans `src/catalog.py`, jamais un champ de plus dans la même.
+
+Il n'existe d'ailleurs **aucun fichier de correspondance officiel** entre les deux
+numérotations — les discussions LDraw renvoient toutes à des bases tierces.
+
+Le fichier produit est une *wanted list* XML importable telle quelle dans BrickLink
+(`Want` > `Upload`). Son format vient de la page d'aide de BrickLink, pas d'une
+supposition — et il réserve un piège : **le fichier ne doit pas porter de déclaration
+`<?xml ?>`**.
+
+```
+wanted_list.xml          produit à côté de bom.csv, par les trois chemins de génération
+```
+
+Deux garde-fous :
+
+- une pièce **sans correspondance vérifiée n'est jamais devinée** : elle sort du XML et
+  part dans la liste des manquants, affichée à l'utilisateur ;
+- `verify_bricklink()` échoue si une pièce du catalogue n'a pas de correspondance
+  **explicite**. Élargir le catalogue sans se poser la question du numéro de boutique
+  casse donc le test, au lieu de produire une liste d'achat trouée en silence.
+
+Dernier point, découvert en vérifiant les couleurs : les deux gris de la palette
+(`light_gray`, `dark_gray`) **ne sont plus produits** depuis 2007 et 2006. Ils restent
+au catalogue BrickLink, donc le fichier est valide, mais l'offre est d'occasion. La
+liste le signale et nomme l'équivalent actuel (*Light / Dark Bluish Gray*). Changer la
+palette serait une décision produit, pas une correction : elle modifierait la couleur de
+tous les modèles déjà générés.
+
 ### Refaire ou relancer
 
 Deux actions voisines dont les coûts n'ont rien à voir — et la distinction est tout
@@ -536,7 +585,7 @@ pip install -r requirements-dev.txt
 
 python -m ruff check .        # linter + tri des imports
 python -m ruff check . --fix  # corrige ce qui est sûr
-python -m pytest tests/ -q    # 169 tests
+python -m pytest tests/ -q    # 191 tests
 ```
 
 Le linter garde le jeu de règles **par défaut** de `ruff` plutôt qu'une sélection
@@ -548,7 +597,7 @@ Les captures larges (`except Exception`) qui sont **volontaires** — les fronti
 échec ne doit pas tout emporter — sont marquées une par une par un `noqa` commenté,
 plutôt que désactivées globalement. Une négligence future sera donc signalée.
 
-169 tests, couvrant le schéma DSL, le compilateur, le pavage, le validateur, les
+191 tests, couvrant le schéma DSL, le compilateur, le pavage, le validateur, les
 primitives, la nomenclature, le découpage en étapes, la notice PDF, les règles de
 relance de l'API et la détection du piège LM Studio.
 
@@ -588,6 +637,7 @@ outputs/
       render_{top,front,right,iso}.png
       final.png                   # planche 2×2
       bom.csv, bom.html           # nomenclature (quantités, références, couleurs)
+      wanted_list.xml             # liste d'achat BrickLink, importable telle quelle
       notice.html                 # notice de montage, une page par étape
       etapes/
         etape_001/                # un sous-modèle cumulatif par étape

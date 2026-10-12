@@ -62,7 +62,8 @@ src/dsl_schema.py    Schéma JSON du DSL + palette de 12 couleurs
 src/compiler.py      DSL -> grille de voxels numpy
 src/tiler.py         voxels -> pièces du catalogue, avec décalage des joints
 src/ldraw_writer.py  pièces -> model.ldr
-src/catalog.py       24 pièces + palette, vérifiées contre la bibliothèque LDraw
+src/catalog.py       24 pièces + palette + correspondance BrickLink, toutes vérifiées
+src/wanted_list.py   nomenclature -> liste d'achat BrickLink (XML)
 src/validator.py     contrôles géométriques -> report.json
 src/primitives.py    formes de référence analytiques + métrique IoU
 src/blender_script.py  model.ldr -> 4 rendus (s'exécute DANS Blender)
@@ -132,6 +133,28 @@ idempotent, appele au demarrage de l'API et de l'agent. Pas d'Alembic : une colo
 justifie pas un outil de migration et son etat a garder coherent entre le conteneur et
 l'hote. jobs.origine_id relie les essais successifs d'un meme prompt et pointe TOUJOURS
 la racine, jamais l'essai precedent.
+
+Correspondance BrickLink : VERIFIEE une par une le 2026-10-12 sur bricklink.com, figee
+dans src/catalog.BRICKLINK_PARTS et BRICKLINK_COLORS. 3 pieces sur 24 portent un numero
+different des deux cotes (3023b/3023, 3070b/3070, 3069b/3069) : ne JAMAIS deduire le
+numero de boutique du numero LDraw. Les couleurs sont pires, les deux systemes utilisent
+les memes nombres pour des couleurs differentes (LDraw 8 = Dark_Grey, BrickLink 8 =
+Brown). Il n'existe aucun fichier de correspondance officiel entre les deux.
+verify_bricklink() echoue si une piece du catalogue n'a pas de correspondance explicite :
+elargir le catalogue oblige donc a traiter la question.
+
+verify_catalog() ne testait que la PRESENCE du fichier .dat, et laissait donc passer
+3023 apres que la mise a jour LDraw 2024-07 a renomme la piece en 3023b (3023.dat n'est
+plus qu'un stub "0 ~Moved to 3023b"). Il rejette desormais ces stubs. Le catalogue
+utilise 3023b.
+
+Format de la wanted list BrickLink : verifie sur help.asp?helpID=207. Le fichier ne doit
+PAS porter de declaration <?xml ?>, et seuls ITEMTYPE et ITEMID sont obligatoires.
+
+Licence de la bibliotheque LDraw : CC BY 2.0 et CC BY 4.0 (CAlicense.txt, CAlicense4.txt
+et CAreadme.txt, livres avec la bibliotheque ; chaque .dat du catalogue porte sa ligne
+"0 !LICENSE"). La redistribution est donc autorisee avec attribution, y compris dans une
+image Docker.
 
 Problèmes connus à surveiller
 
@@ -356,7 +379,7 @@ Prérequis vérifiables d'un coup : python tools/check_env.py
 
 Commandes utiles
 
-python -m pytest tests/ -q                      tests (169)
+python -m pytest tests/ -q                      tests (191)
 python -m ruff check .                          linter (pip install -r requirements-dev.txt)
 python tools/check_env.py                       diagnostic environnement
 python lego.py "<prompt>"                       UN modèle complet, en une commande
