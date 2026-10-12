@@ -88,8 +88,10 @@ def write_piece_models(etapes, pieces_dir):
             dossier = os.path.join(pieces_dir, f"{cle[0]}_c{cle[1]}")
             os.makedirs(dossier, exist_ok=True)
             # Place la piece a l'origine, sans rotation : l'encart montre le type de
-            # piece, pas son orientation dans le modele.
-            seule = p._replace(x=0, y=0, z=0, rotated=False)
+            # piece, pas son orientation dans le modele. `retournee` est remis a plat
+            # pour la meme raison, sinon la vignette d'une pente dependrait de celle
+            # de ses occurrences qui a ete rencontree en premier.
+            seule = p._replace(x=0, y=0, z=0, rotated=False, retournee=False)
             write_ldr([seule], os.path.join(dossier, "model.ldr"), f"piece_{cle[0]}")
             modeles[cle] = dossier
     return modeles

@@ -21,7 +21,7 @@ class Part:
     immuables evite qu'une modification accidentelle se propage partout.
     """
     ldraw_id: str
-    kind: str  # "brick" | "plate" | "tile"
+    kind: str  # "brick" | "plate" | "tile" | "slope"
     w: int  # emprise en tenons le long de l'axe X LDraw, matrice identite (non tourne)
     d: int  # emprise en tenons le long de l'axe Z LDraw, matrice identite (non tourne)
     h: int  # hauteur en plates : 3 pour une brique, 1 pour une plate/tile
@@ -63,7 +63,41 @@ PARTS = [
     # tiles (h=1)
     Part("3070b", "tile", 1, 1, 1),
     Part("3069b", "tile", 2, 1, 1),
+    # pentes 45 degres (h=3). ATTENTION : pour une pente, w et d decrivent la seule
+    # EMPREINTE HAUTE — les cases de la grille que la piece remplit vraiment. La rampe
+    # occupe en plus une rangee adjacente, qui doit etre VIDE (voir PROFONDEUR_RAMPE et
+    # src/tiler.py). d vaut donc toujours 1 : une pente n'a qu'une rangee haute.
+    Part("3040b", "slope", 1, 1, 3),
+    Part("3039",  "slope", 2, 1, 3),
 ]
+
+# Geometrie des pentes, VERIFIEE EMPIRIQUEMENT et non supposee (methode et rendu dans
+# le README) : les sommets de 3040b.dat, sous-fichiers resolus, donnent
+#   X -10..10 (1 tenon)   Z -30..10 (2 tenons)   Y -4..24 (1 brique + tenons)
+# L'extension en Z n'est PAS centree sur l'origine : la piece est centree sur son tenon
+# HAUT (Z -10..10) et sa rampe descend vers -Z, soit -y interne avec la matrice
+# identite. Confirme par un rendu des 4 orientations (le tenon marque la partie haute).
+#
+# Consequence heureuse : comme w et d decrivent l'empreinte haute, qui EST centree sur
+# l'origine, la formule de centrage de src/ldraw_writer.py s'applique sans changement.
+# Prendre w/d pour l'emprise totale 1x2 l'aurait decalee d'un tenon, en silence.
+PROFONDEUR_RAMPE = 1
+
+# Direction de la rampe en coordonnees internes, pour chaque orientation.
+# Relevee sur le rendu de verification des 4 matrices (voir ldraw_writer.MATRICES).
+DIRECTION_RAMPE = {
+    (False, False): (0, -1),   # identite   : rampe vers -y
+    (True, False):  (-1, 0),   # 90 degres  : rampe vers -x
+    (False, True):  (0, 1),    # 180 degres : rampe vers +y
+    (True, True):   (1, 0),    # 270 degres : rampe vers +x
+}
+
+
+def est_une_pente(part):
+    """Une pente ne remplit pas sa boite englobante : le pavage doit la traiter a
+    part. Centralise ici pour que la condition ne se disperse pas en tests de kind."""
+    return part.kind == "slope"
+
 
 # noms lisibles (doivent matcher src.dsl_schema.PALETTE_NAMES) -> code + nom LDraw
 # officiels + RGB, tous lus depuis LDConfig.ldr (voir docstring).
@@ -130,6 +164,12 @@ BRICKLINK_PARTS = {
     # tiles
     "3070b": ("3070", "Tile 1 x 1"),
     "3069b": ("3069", "Tile 1 x 2"),
+    # pentes. 3040b est un QUATRIEME ecart : ce numero n'existe pas chez BrickLink
+    # (contrairement a 3070b et 3069b, qui y figurent au moins en numero alterne).
+    # La correspondance est etablie par le nom et les dimensions, tous deux releves :
+    # BrickLink 3040 "Slope 45 2 x 1", Stud Dim. 2 x 1 x 1.
+    "3040b": ("3040", "Slope 45 2 x 1"),
+    "3039":  ("3039", "Slope 45 2 x 2"),
 }
 
 # Identifiants couleur BrickLink, lus un par un dans le guide officiel
