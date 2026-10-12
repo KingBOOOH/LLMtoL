@@ -254,3 +254,37 @@ def test_au_demarrage_tout_job_en_cours_est_repris():
     corps = source[source.index("def main("):]
     assert re.search(r"reprendre_les_abandonnes\(session,\s*limite=demarrage\)", corps), \
         "main() doit reprendre sans attendre le delai de peremption"
+
+
+def test_render_all_branche_le_suivi_quand_on_lui_en_donne_un():
+    """on_progress etait accepte, documente... et jamais appele.
+
+    Consequence reelle : pendant le rendu — de loin la phase la plus longue — la barre
+    de l'interface restait sur la valeur posee avant le lancement. La fonction qui sait
+    lire l'avancement existait deja (_rendre_en_suivant) mais rien ne l'appelait.
+
+    Le lancement de Blender est remplace ici parce qu'on teste le branchement, pas le
+    rendu : sans agent de substitution, le test exigerait Blender et douze minutes.
+    """
+    import pipeline
+
+    appels = []
+    suivi, brut = pipeline._rendre_en_suivant, pipeline.subprocess.run
+    try:
+        pipeline._rendre_en_suivant = lambda env, cb: appels.append("suivi")
+        pipeline.subprocess.run = lambda *a, **k: appels.append("brut")
+
+        racine = Path(__file__).resolve().parent.parent / "outputs"
+        racine.mkdir(exist_ok=True)
+        pipeline.render_all([str(racine)], str(racine), assemble_dirs=[],
+                            manifest_name="_manifest_test_suivi.txt",
+                            on_progress=lambda k, n: None)
+        assert appels == ["suivi"], "un on_progress fourni doit passer par le lecteur"
+
+        appels.clear()
+        pipeline.render_all([str(racine)], str(racine), assemble_dirs=[],
+                            manifest_name="_manifest_test_suivi.txt")
+        assert appels == ["brut"], "sans suivi, on garde le simple subprocess.run"
+    finally:
+        pipeline._rendre_en_suivant, pipeline.subprocess.run = suivi, brut
+        (racine / "_manifest_test_suivi.txt").unlink(missing_ok=True)
