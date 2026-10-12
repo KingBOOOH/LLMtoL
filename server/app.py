@@ -276,6 +276,19 @@ def supprimer_job(job_id: str):
     return Response(status_code=204)
 
 
+def _fichier_de_sortie(relatif, nom_fichier):
+    """Resout un fichier sous OUTPUTS_ROOT, en refusant de sortir de la racine.
+
+    `relatif` vient de la base, donc d'un agent : on le traite malgre tout comme une
+    entree non fiable. Extrait de la route de rendu, qui faisait deja ce controle,
+    pour que la liste d'achat ne le reimplemente pas a moitie.
+    """
+    chemin = os.path.abspath(os.path.join(OUTPUTS_ROOT, relatif, nom_fichier))
+    if os.path.commonpath([chemin, OUTPUTS_ROOT]) != OUTPUTS_ROOT:
+        raise HTTPException(403, "Chemin hors de la racine des sorties.")
+    return chemin
+
+
 @app.get("/api/variantes/{variante_id}/render/{vue}")
 def rendu(variante_id: str, vue: str):
     """Sert une image depuis le montage lecture seule."""
@@ -287,11 +300,7 @@ def rendu(variante_id: str, vue: str):
             raise HTTPException(404, "Aucun rendu pour cette variante.")
         relatif = v.render_dir
 
-    # render_dir vient de la base, donc d'un agent : on le traite malgre tout comme
-    # une entree non fiable et on verifie que le chemin resolu reste sous la racine.
-    chemin = os.path.abspath(os.path.join(OUTPUTS_ROOT, relatif, FICHIER_DE_VUE[vue]))
-    if os.path.commonpath([chemin, OUTPUTS_ROOT]) != OUTPUTS_ROOT:
-        raise HTTPException(403, "Chemin hors de la racine des sorties.")
+    chemin = _fichier_de_sortie(relatif, FICHIER_DE_VUE[vue])
     if not os.path.isfile(chemin):
         raise HTTPException(404, "Image absente du disque.")
     return FileResponse(chemin, media_type="image/png")
@@ -311,6 +320,32 @@ def pdf(job_id: str):
         return Response(
             content=bytes(retenue.pdf), media_type="application/pdf",
             headers={"Content-Disposition": f'attachment; filename="notice_{nom}.pdf"'})
+
+
+@app.get("/api/jobs/{job_id}/wanted-list")
+def wanted_list(job_id: str):
+    """Sert la liste d'achat BrickLink de la variante retenue.
+
+    Produite par l'agent a cote de la nomenclature (voir pipeline.preparer_notice) :
+    l'API ne la calcule pas, elle n'ecrit jamais dans outputs/ et ne contient meme
+    pas src/.
+    """
+    with Session() as s:
+        job = s.get(Job, job_id)
+        if job is None:
+            raise HTTPException(404, "Job introuvable.")
+        retenue = next((v for v in job.variantes if v.is_chosen), None)
+        if retenue is None or not retenue.render_dir:
+            raise HTTPException(404, "Aucune variante retenue pour ce job.")
+        relatif, nom = retenue.render_dir, (retenue.name or "modele")
+
+    chemin = _fichier_de_sortie(relatif, "wanted_list.xml")
+    if not os.path.isfile(chemin):
+        raise HTTPException(
+            404, "Pas encore de liste d'achat pour ce modèle. Elle est produite avec "
+                 "la notice : relance « Refaire la notice » si le modèle est ancien.")
+    return FileResponse(chemin, media_type="application/xml",
+                        filename=f"wanted_list_{nom}.xml")
 
 
 @app.get("/api/jobs/{job_id}/design")

@@ -47,7 +47,10 @@ PARTS = [
     Part("3007", "brick", 8, 2, 3),
     # plates (h=1)
     Part("3024", "plate", 1, 1, 1),
-    Part("3023", "plate", 2, 1, 1),
+    # 3023b et non 3023 : la mise a jour LDraw 2024-07 a renomme la piece, et
+    # 3023.dat n'est plus qu'un stub "~Moved to 3023b". Cote BrickLink le numero
+    # reste 3023 — voir BRICKLINK_PARTS, c'est l'un des trois ecarts reels.
+    Part("3023b", "plate", 2, 1, 1),
     Part("3623", "plate", 3, 1, 1),
     Part("3710", "plate", 4, 1, 1),
     Part("3666", "plate", 6, 1, 1),
@@ -78,6 +81,106 @@ PALETTE = {
     "green":         {"ldraw_code": 2,  "ldraw_name": "Green",         "rgb": (0.000, 0.522, 0.169, 1.0)},
     "blue":          {"ldraw_code": 1,  "ldraw_name": "Blue",          "rgb": (0.118, 0.353, 0.659, 1.0)},
 }
+
+# --- Correspondance BrickLink ----------------------------------------------------
+#
+# VERIFIEE UNE PAR UNE le 2026-10-12 contre le catalogue BrickLink lui-meme
+# (https://www.bricklink.com/v2/catalog/catalogitem.page?P=<id>), en comparant pour
+# chaque piece le nom et la dimension en tenons annonces par BrickLink a la
+# description du fichier .dat local et aux w/d de PARTS ci-dessus. Rien n'est deduit
+# d'une regle de transformation.
+#
+# Il n'existe AUCUN fichier de correspondance officiel entre les deux systemes
+# (verifie : les discussions LDraw renvoient toutes a des bases tierces). La prudence
+# du projet etait donc justifiee — 3 des 24 pieces ne portent pas le meme numero des
+# deux cotes :
+#
+#   LDraw 3023b -> BrickLink 3023   LDraw a renomme la piece, BrickLink non
+#   LDraw 3070b -> BrickLink 3070   BrickLink liste 3070b en numero ALTERNE
+#   LDraw 3069b -> BrickLink 3069   idem
+#
+# Le nom exact lu sur BrickLink est conserve a cote du numero : c'est lui qui rend la
+# verification relisible, et qui permettra de constater une divergence si BrickLink
+# renumerote un jour.
+BRICKLINK_PARTS = {
+    # briques
+    "3005":  ("3005", "Brick 1 x 1"),
+    "3004":  ("3004", "Brick 1 x 2"),
+    "3622":  ("3622", "Brick 1 x 3"),
+    "3010":  ("3010", "Brick 1 x 4"),
+    "3009":  ("3009", "Brick 1 x 6"),
+    "3008":  ("3008", "Brick 1 x 8"),
+    "3003":  ("3003", "Brick 2 x 2"),
+    "3002":  ("3002", "Brick 2 x 3"),
+    "3001":  ("3001", "Brick 2 x 4"),
+    "2456":  ("2456", "Brick 2 x 6"),
+    "3007":  ("3007", "Brick 2 x 8"),
+    # plates
+    "3024":  ("3024", "Plate 1 x 1"),
+    "3023b": ("3023", "Plate 1 x 2"),
+    "3623":  ("3623", "Plate 1 x 3"),
+    "3710":  ("3710", "Plate 1 x 4"),
+    "3666":  ("3666", "Plate 1 x 6"),
+    "3460":  ("3460", "Plate 1 x 8"),
+    "3022":  ("3022", "Plate 2 x 2"),
+    "3021":  ("3021", "Plate 2 x 3"),
+    "3020":  ("3020", "Plate 2 x 4"),
+    "3795":  ("3795", "Plate 2 x 6"),
+    "3034":  ("3034", "Plate 2 x 8"),
+    # tiles
+    "3070b": ("3070", "Tile 1 x 1"),
+    "3069b": ("3069", "Tile 1 x 2"),
+}
+
+# Identifiants couleur BrickLink, lus un par un dans le guide officiel
+# (https://v2.bricklink.com/catalog/color-guide) le 2026-10-12.
+#
+# ATTENTION, les deux systemes se contredisent sur les MEMES nombres : le code LDraw 8
+# est Dark_Grey, le code BrickLink 8 est Brown ; BrickLink 88 est Reddish Brown la ou
+# LDraw utilise 70. Les deux numerotations ne doivent jamais etre melangees, d'ou
+# cette table separee plutot qu'un champ de plus dans PALETTE.
+BRICKLINK_COLORS = {
+    "black":         (11, "Black"),
+    "dark_gray":     (10, "Dark Gray"),
+    "light_gray":    (9,  "Light Gray"),
+    "white":         (1,  "White"),
+    "red":           (5,  "Red"),
+    "reddish_brown": (88, "Reddish Brown"),
+    "brown":         (8,  "Brown"),
+    "tan":           (2,  "Tan"),
+    "yellow":        (3,  "Yellow"),
+    "orange":        (4,  "Orange"),
+    "green":         (6,  "Green"),
+    "blue":          (7,  "Blue"),
+}
+
+# Couleurs de la palette qui ne sont PLUS PRODUITES, avec leur derniere annee de
+# production relevee dans le guide BrickLink. La piece reste achetable d'occasion,
+# mais plus cher et en quantite limitee. Une liste d'achat muette sur ce point
+# enverrait l'utilisateur vers une commande impossible a honorer.
+#
+# Les deux concernees sont les gris d'avant 2004, que PALETTE utilise (codes LDraw 7
+# et 8). LEGO les a remplaces par les gris "bluish" (codes LDraw 71 et 72).
+COULEURS_HORS_PRODUCTION = {
+    "light_gray": {"derniere_annee": 2007, "remplacee_par": (86, "Light Bluish Gray")},
+    "dark_gray":  {"derniere_annee": 2006, "remplacee_par": (85, "Dark Bluish Gray")},
+}
+
+
+def reference_bricklink(ldraw_id):
+    """Retourne (numero, nom) BrickLink pour cette piece, ou None si non verifiee.
+
+    None est une reponse legitime et doit se propager jusqu'a l'utilisateur : une
+    piece sans correspondance VERIFIEE est signalee, jamais devinee. C'est la raison
+    de passer par cette fonction plutot que d'acceder au dictionnaire directement.
+    """
+    return BRICKLINK_PARTS.get(ldraw_id)
+
+
+def couleur_bricklink(nom_interne):
+    """Retourne (identifiant, nom) BrickLink pour cette couleur, ou None."""
+    return BRICKLINK_COLORS.get(nom_interne)
+
 
 LDRAW_CANDIDATE_DIRS = [
     "~/ldraw", "C:/ldraw", "%APPDATA%/LDraw",
@@ -117,14 +220,47 @@ def verify_catalog():
 
     parts_dir = os.path.join(library, "parts")
     missing = []
+    deplacees = []
     for part in PARTS:
         candidates = [f"{part.ldraw_id}.dat", f"{part.ldraw_id.upper()}.DAT"]
-        if not any(os.path.isfile(os.path.join(parts_dir, c)) for c in candidates):
+        trouve = next((os.path.join(parts_dir, c) for c in candidates
+                       if os.path.isfile(os.path.join(parts_dir, c))), None)
+        if trouve is None:
             missing.append(part.ldraw_id)
+            continue
+        # Un fichier present ne suffit pas : LDraw garde les anciens numeros sous forme
+        # de stubs "0 ~Moved to <nouveau>". Ils fonctionnent encore par redirection,
+        # mais sont deprecies et peuvent disparaitre d'une mise a jour. Le controle ne
+        # testait que la presence, et laissait donc passer 3023 une fois la piece
+        # renommee en 3023b par la mise a jour LDraw 2024-07.
+        with open(trouve, encoding="utf-8", errors="replace") as f:
+            premiere = f.readline()
+        if premiere.startswith("0 ~Moved to"):
+            deplacees.append(f"{part.ldraw_id} ({premiere[2:].strip()})")
 
     if missing:
         raise FileNotFoundError(f"References LDraw manquantes dans {parts_dir} : {missing}")
+    if deplacees:
+        raise ValueError(
+            "References LDraw depreciees (la bibliotheque a renomme ces pieces) : "
+            + ", ".join(deplacees))
 
+    return True
+
+
+def verify_bricklink():
+    """Verifie que chaque piece du catalogue a une correspondance BrickLink EXPLICITE.
+
+    Explicite veut dire presente dans BRICKLINK_PARTS, meme pour y valoir None.
+    Ajouter une piece au catalogue sans se poser la question de son numero de boutique
+    doit faire echouer ce controle, pas produire une liste d'achat trouee en silence.
+    """
+    sans = [p.ldraw_id for p in PARTS if p.ldraw_id not in BRICKLINK_PARTS]
+    if sans:
+        raise ValueError(
+            "Pieces sans correspondance BrickLink declaree : " + ", ".join(sans)
+            + ". Verifie-les sur bricklink.com puis ajoute-les a BRICKLINK_PARTS "
+              "(ou mets None explicitement si la piece n'y existe pas).")
     return True
 
 

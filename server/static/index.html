@@ -294,6 +294,12 @@
         <span v-else class="vide-doux">Pas de notice PDF pour ce modèle.</span>
       </div>
       <div style="flex:0 0 auto">
+        <button class="discret" v-if="retenueDe(ouvert)"
+                @click="telechargerListeAchat(ouvert)">
+          Liste d'achat BrickLink
+        </button>
+      </div>
+      <div style="flex:0 0 auto">
         <button class="discret" v-if="!enCours(ouvert) && retenueDe(ouvert)"
                 @click="regenerer(ouvert)">
           Refaire la notice &mdash; aucune génération
@@ -474,6 +480,10 @@ Vue.createApp({
       } catch (e) { this.erreur = e.message; }
     },
     telecharger(j) { window.location = `/api/jobs/${j.id}/pdf`; },
+    // XML importable tel quel dans BrickLink (Want > Upload). Produit par l'agent a
+    // cote de la notice, donc absent des modeles generes avant cette version : la
+    // route renvoie alors un message qui dit quoi faire.
+    telechargerListeAchat(j) { window.location = `/api/jobs/${j.id}/wanted-list`; },
 
     // Refait rendus, notice et PDF depuis le design deja en base : aucun appel au
     // modele, donc rien a confirmer.
