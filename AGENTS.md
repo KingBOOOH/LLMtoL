@@ -136,8 +136,8 @@ plan qu'on lui donne. Corriger prompts/designer_system.txt n'a rien changé (mes
 8/26 avant, 9/26 après). La consigne a été déplacée dans prompts/planner_system.txt :
 "Z IS 0-INDEXED AND z=0 IS THE GROUND", plus un z=0 figé dans le gabarit de sortie.
 
-Mesuré sur les 3 formes concernées (cube, pavé, cylindre, 3 tentatives chacune) :
-9/9 hors sol -> 0/9, et IoU 0.819 -> 1.000.
+Mesuré sur le jeu complet (9 formes, 3 tentatives) : 9/26 hors sol -> 0/26. Les trois
+formes concernées passent de 0.819 a 1.000 d'IoU.
 
 Le décalage n'était PAS cosmétique : en démarrant à z=1 dans un bbox de hauteur n, le
 modèle se faisait tronquer d'une plate par le haut contre son propre bbox. Les IoU
@@ -160,18 +160,27 @@ Studio (My Models > le modèle > vider System Prompt et Structured Output). Tant
 n'est pas fait, eval/run_eval.py est inutilisable (il passe par le planificateur).
 
 Le modèle ne sait pas rastériser un cercle. D'où les opérations cylinder/sphere, qui
-déplacent le rastérisage vers Python (src/primitives.py). Mesure figée, 3 tentatives par
-forme via le vrai planificateur (v1prim_20260923_093512 -> v1prim_20261010_185403) :
+déplacent le rastérisage vers Python (src/primitives.py). MESURE FIGÉE COMPLÈTE, 9
+formes x 3 tentatives via le vrai planificateur. Référence avant cylinder/sphere :
+v1prim_20260923_093512 ; après : v1prim_20261010_185403 ; après correction du z :
+v1primz_* + v1primB_* + v1primC_*.
 
-  IoU global          0.614 -> 0.706
-  IoU formes courbes  0.391 -> 0.619     durée 339s -> 131s
-  IoU formes en box   0.777 -> 0.769     (inchangé, dans le bruit)
-  cylindre  0.272 -> 0.750     anneau 0.698 -> 0.838     tour 0.978 -> 1.000
-  sphère    0.145 -> 0.527     (1216s -> 404s)
-  escalier  0.074 -> 0.139     (reste le pire cas du jeu)
+  cylinder/sphere seuls   IoU global 0.614 -> 0.706   courbes 0.391 -> 0.619
+  puis correction du z    IoU global 0.706 -> 0.774   courbes 0.619 -> 0.698
+                          box 0.769 -> 0.830          durée 78s -> 52s
+                          hors sol 9/26 -> 0/26
 
-Opérations réellement employées sur 27 designs : box 18, cylinder 6, layer 2, carve 1,
-mirror 1. cylinder est adopté, sphere NON.
+  cube     0.875 -> 1.000     pave     0.833 -> 1.000     cylindre 0.750 -> 1.000
+  anneau   0.838 -> 0.947     croix/tour 1.000 (inchangé) pyramide 0.330 -> 0.384
+  escalier 0.139 -> 0.149 (pire cas du jeu)              sphere   0.527 -> 0.342
+
+Opérations réellement employées : box, cylinder, layer, carve, mirror. cylinder est
+adopté, sphere NON.
+
+Le recul de prim_sphere n'est PAS une régression : sur 3 tentatives, une échoue (déjà
+avant), une reproduit exactement l'ancien résultat (0.527 avec layer) et une bascule sur
+box+carve et tombe à 0.157. La moyenne repose sur deux générations exploitables, dont
+une qui joue à pile ou face sur la méthode. Chiffre non solide statistiquement.
 
 Conséquence sur la métrique : un IoU de 1.0 sur prim_cylindre mesure désormais que le
 modèle a choisi la bonne opération et les bons paramètres, plus qu'il a su tracer un
@@ -231,19 +240,16 @@ casser la compatibilité Windows (attention à l'encodage : sortie redirigée = 
 Priorités techniques actuelles
 
 Priorité 1 :
-  COMPLÉTER LA MESURE "APRÈS". La correction du planificateur (z=0) n'est mesurée que
-  sur 3 formes (cube, pavé, cylindre) : 9/9 hors sol -> 0/9, IoU 0.819 -> 1.000.
-  Les 6 autres formes n'ont pas été remesurées depuis. Pour une figure globale
-  comparable il faut rejouer le jeu complet :
-    python -u -m eval.run_eval --version v1prim --n 3 --testset eval/primitives_testset.json
-  Référence : eval/results/v1prim_20261010_185403.csv (IoU global 0.706, 9/26 hors sol).
-  Extrapolation NON MESURÉE si les 6 autres formes ne bougent pas : IoU global ~0.77.
-  Attention au coût : prim_sphere à lui seul fait 404 s de moyenne par tentative, avec
-  des pointes à près de 2900 s. Le reste du jeu est rapide.
-
-  Lancer par petits lots (3 à 4 formes), pas en un run de 27 : un run opaque de 35
-  minutes ne permet pas de distinguer "bloqué" de "lent", et retarde la découverte d'une
-  correction ratée. Toujours avec python -u, sinon le journal reste vide (tampon).
+  similarité sémantique (CLIP/VLM). Sur un objet non primitif, aucune métrique ne dit
+  aujourd'hui si le résultat ressemble au prompt. C'est le dernier grand trou : on sait
+  mesurer la validité géométrique et les formes primitives, rien entre les deux.
+  LM Studio sert plusieurs modèles à la fois (champ `model` de la requête, llm_client.py
+  l'envoie déjà) : un VLM qui note render_iso.png est la bonne forme. À calibrer d'abord
+  sur le jeu primitives, où l'IoU donne la vérité terrain — si la note du VLM ne corrèle
+  pas avec l'IoU connu, le juge est inutilisable et ça se sait sans dépenser une
+  génération.
+  Ne PAS mettre un modèle texte à vérifier la géométrie : src/validator.py le fait déjà,
+  exactement et gratuitement.
 
 Priorité 2 :
   sphere n'est pas adopté, le modèle garde layer (IoU 0.527). Cause identifiée : le
@@ -258,16 +264,6 @@ Priorité 2 :
   prim_escalier reste le pire cas du jeu (0.139) et n'a jamais été diagnostiqué.
 
 Priorité 3 :
-  similarité sémantique (CLIP/VLM). Sur un objet non primitif, aucune métrique ne dit
-  aujourd'hui si le résultat ressemble au prompt. LM Studio sait servir plusieurs
-  modèles à la fois (champ `model` de la requête, llm_client.py l'envoie déjà) : un VLM
-  qui note render_iso.png est la bonne forme. À calibrer d'abord sur le jeu primitives,
-  où l'IoU donne la vérité terrain — si la note du VLM ne corrèle pas avec l'IoU connu,
-  le juge est inutilisable et ça se sait sans dépenser une génération.
-  Ne PAS mettre un modèle texte à vérifier la géométrie : src/validator.py le fait déjà,
-  exactement et gratuitement.
-
-Priorité 4 :
   LPub3D n'a jamais été évalué avant d'écrire src/instructions.py (le plan le demandait).
   À faire si la notice doit progresser sérieusement.
 

@@ -524,7 +524,7 @@ le tableau du projet. Résumé :
 | #10 | API backend | fait |
 | #11 | interface web Vue 3 | fait |
 | #13 | taille du modèle bornée par le schéma | fait |
-| #2 | mesure figée du jeu primitives | en cours — 3 formes sur 9 rejouées depuis la correction du `z` |
+| #2 | mesure figée du jeu primitives | fait — 9 formes, IoU 0,706 → 0,774 |
 | #9 | agent de génération | fait — validé par une génération réelle de bout en bout |
 | #5 | notice utilisable quelle que soit la taille | fait |
 | #6 | constructibilité annoncée en français | fait |
@@ -552,39 +552,46 @@ verrouille le fait que le DSL exprime un cylindre ou une sphère exactement (IoU
 aller-retour = 1,0), alors que le modèle, lui, ne sait pas rastériser un cercle en ASCII.
 
 **Effet des corrections, mesuré** — opérations `cylinder`/`sphere`, puis correction du
-décalage `z`. Mesure figée : 3 tentatives par forme, via le vrai planificateur.
+décalage `z`. Mesure figée **complète** : les 9 formes, 3 tentatives chacune, via le
+vrai planificateur.
 
 | | avant | après |
 |---|---|---|
-| IoU global | 0,614 | **0,706** |
-| IoU formes courbes | 0,391 | **0,619** |
-| durée moyenne, formes courbes | 339 s | **131 s** |
-| IoU formes en `box` | 0,777 | 0,769 |
+| IoU global | 0,706 | **0,774** |
+| IoU formes en `box` | 0,769 | **0,830** |
+| IoU formes courbes | 0,619 | **0,698** |
+| **ne touchent pas le sol** | **9/26** | **0/26** |
+| durée moyenne par génération | 78 s | **52 s** |
+| JSON valide | 26/27 | 26/27 |
 
-Les gains viennent des formes courbes : `prim_cylindre` 0,272 → **0,750** (l'opération
-`cylinder` est adoptée), `prim_anneau` 0,698 → **0,838** (`cylinder` + `carve`),
-`prim_sphere` 0,145 → **0,527** avec un temps divisé par trois.
+| forme | avant | après | |
+|---|---|---|---|
+| `prim_cube` | 0,875 | **1,000** | |
+| `prim_pave` | 0,833 | **1,000** | |
+| `prim_cylindre` | 0,750 | **1,000** | opération `cylinder` adoptée |
+| `prim_anneau` | 0,838 | **0,947** | `cylinder` + `carve` |
+| `prim_croix` | 1,000 | 1,000 | |
+| `prim_tour` | 1,000 | 1,000 | |
+| `prim_pyramide` | 0,330 | 0,384 | |
+| `prim_escalier` | 0,139 | 0,149 | reste le pire cas du jeu |
+| `prim_sphere` | 0,527 | 0,342 | voir ci-dessous |
 
 **Le décalage `z` venait du planificateur, pas du designer.** Son plan écrivait
 `z=1..8` et le designer obéissait au plan reçu. Corriger le prompt du designer n'a rien
-changé (8/26 → 9/26) ; la consigne appartient à `prompts/planner_system.txt`. Mesuré sur
-les 3 formes concernées : **9/9 hors sol → 0/9**, et IoU **0,819 → 1,000**.
+changé (8/26 → 9/26) ; la consigne appartient à `prompts/planner_system.txt`.
 
 Ce défaut n'était pas cosmétique. En démarrant à `z=1` dans une boîte de hauteur *n*, le
 modèle se faisait tronquer d'une plate contre son propre bbox : les IoU observés valaient
 exactement (n−1)/n — 7/8 pour le cube, 5/6 pour le pavé, 3/4 pour le cylindre. Une
-couche entière perdue à chaque génération.
+couche entière perdue à chaque génération. C'est pourquoi trois formes passent d'un coup
+à l'IoU parfait.
 
-**Ce qui reste à mesurer** — les 6 autres formes n'ont pas été rejouées depuis la
-correction du planificateur. La figure globale « après » est donc incomplète :
-
-```powershell
-python -u -m eval.run_eval --version v1prim --n 3 --testset eval/primitives_testset.json
-```
-
-Par petits lots de 3 ou 4 formes plutôt qu'en un seul run : un run opaque de 27
-générations dure plus de trente minutes sans permettre de distinguer « bloqué » de
-« lent ». Et `python -u`, sinon le journal reste vide.
+**Le recul de `prim_sphere` n'est pas une régression.** Sur trois tentatives, une échoue
+(elle échouait déjà avant) et les deux autres divergent : l'une reproduit exactement le
+résultat d'avant (0,527 avec `layer`), l'autre bascule sur `box` + `carve` et tombe à
+0,157 — forcément, un cube ne fait pas une sphère. La moyenne repose donc sur **deux
+générations exploitables**, dont une qui joue à pile ou face sur la méthode. Le chiffre
+n'est pas statistiquement solide.
 
 **Un cas résiste** — le modèle n'adopte pas `sphere`, il reste sur `layer`. La cause est
 dans le prompt figé lui-même, qui dicte la méthode : « chaque couche horizontale est un
