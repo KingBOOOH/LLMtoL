@@ -10,11 +10,24 @@ Docker, "127.0.0.1:5442" depuis l'hote — d'ou l'URL lue dans l'environnement.
 
 import os
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import (ARRAY, BigInteger, Boolean, DateTime, ForeignKey, Integer,
-                        LargeBinary, Numeric, String, Text, UniqueConstraint,
-                        create_engine, func, select)
+from sqlalchemy import (
+    ARRAY,
+    BigInteger,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    LargeBinary,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    create_engine,
+    func,
+    select,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
@@ -121,5 +134,5 @@ def agent_actif(session):
     Sert a refuser une soumission plutot qu'a la laisser attendre indefiniment : sans
     agent, l'API est incapable de generer quoi que ce soit.
     """
-    limite = datetime.now(timezone.utc) - timedelta(seconds=AGENT_TIMEOUT_S)
+    limite = datetime.now(UTC) - timedelta(seconds=AGENT_TIMEOUT_S)
     return session.scalar(select(Agent.nom).where(Agent.seen_at >= limite).limit(1))

@@ -1,0 +1,44 @@
+# Configuration de ruff (linter + tri des imports).
+#
+# On garde volontairement le jeu de regles PAR DEFAUT de ruff plutot que d'en
+# selectionner une longue liste : il a deja trouve de vrais defauts ici (un except nu,
+# deux imports morts, une variable deballee jamais lue). Curer une selection a priori
+# reviendrait a decider avant de mesurer.
+#
+#     python -m ruff check .          verifier
+#     python -m ruff check . --fix    corriger ce qui est sur
+
+[tool.ruff]
+line-length = 95
+target-version = "py313"
+
+# Sorties de generation : ce n'est pas du code du projet.
+exclude = ["outputs", "eval/results"]
+
+[tool.ruff.lint]
+# Chaque regle desactivee doit porter sa raison. Une regle muette sans
+# justification redevient du bruit qu'on reactive par erreur six mois plus tard.
+ignore = [
+    # Le projet ecrit ses commentaires et ses messages en francais sans accents dans
+    # les .py (la sortie redirigee sous Windows est en cp1252), mais en francais
+    # accentue dans les fichiers servis en UTF-8. RUF001/002/003 signalent les
+    # caracteres "ambigus" et se declenchent sur cette distinction voulue.
+    "RUF001", "RUF002", "RUF003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# B008 : appeler Body(...) dans la valeur par defaut d'un parametre EST l'idiome
+# FastAPI. Le contourner rendrait le code moins lisible qu'il ne l'est.
+"server/app.py" = ["B008"]
+
+# Les scripts __main__ de src/ importent a l'interieur du bloc pour eviter des
+# imports circulaires et ne pas payer le cout a l'import du module.
+"src/*.py" = ["PLC0415"]
+"tools/*.py" = ["PLC0415"]
+"tests/*.py" = ["PLC0415"]
+"agent.py" = ["PLC0415"]
+"lego.py" = ["PLC0415"]
+"pipeline.py" = ["PLC0415"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src", "server", "tools", "config", "pipeline", "agent"]

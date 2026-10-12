@@ -85,7 +85,7 @@ def enable_importldraw():
     """Active l'add-on ImportLDraw, ou echoue en expliquant comment l'installer."""
     try:
         bpy.ops.preferences.addon_enable(module="io_scene_importldraw")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - un modele rate n'arrete pas le lot
         fail(
             f"add-on ImportLDraw introuvable ou non activable ({e}).\n"
             "  Installer importldraw<version>.zip via Blender > Edit > Preferences >\n"
@@ -360,7 +360,7 @@ def main():
         try:
             if render_model(work_dir):
                 succes += 1
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - un modele rate n'arrete pas le lot
             print(f"  ECHEC : {e}")
 
     print(f"Rendus termines : {succes}/{len(work_dirs)}")

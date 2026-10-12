@@ -82,7 +82,8 @@ def write_html(rows, path, model_name="modele", piece_images=None):
     lignes = []
     for r in rows:
         rgb = PALETTE.get(r["couleur"], {}).get("rgb", (0.5, 0.5, 0.5, 1.0))
-        hexa = "#%02x%02x%02x" % tuple(int(c * 255) for c in rgb[:3])
+        rouge, vert, bleu = (int(c * 255) for c in rgb[:3])
+        hexa = f"#{rouge:02x}{vert:02x}{bleu:02x}"
 
         image = piece_images.get((r["ldraw_id"], r["_color_index"]))
         if image and os.path.isfile(image):

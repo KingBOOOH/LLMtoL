@@ -12,6 +12,7 @@ de session et une fonction d'emission injectables.
 import os
 import sys
 import threading
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -227,13 +228,12 @@ def test_le_format_de_progression_de_blender_n_a_pas_change():
     Les deux vivent dans des processus differents : rien d'autre ne relierait un
     changement de format a la barre de progression qui cesserait de bouger.
     """
-    import os
     import re
 
     import pipeline
 
-    source = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                               "src", "blender_script.py"), encoding="utf-8").read()
+    racine = Path(__file__).resolve().parent.parent
+    source = (racine / "src" / "blender_script.py").read_text(encoding="utf-8")
     emission = re.search(r'print\(f"\[\{i\}/\{len\(work_dirs\)\}\][^"]*"', source)
     assert emission, "blender_script.py n'emet plus '[k/n] ...' en debut de ligne"
     # Et le lecteur sait bien lire ce que l'emetteur produit.
@@ -250,7 +250,7 @@ def test_au_demarrage_tout_job_en_cours_est_repris():
 
     import agent as agent_mod
 
-    source = open(agent_mod.__file__, encoding="utf-8").read()
+    source = Path(agent_mod.__file__).read_text(encoding="utf-8")
     corps = source[source.index("def main("):]
     assert re.search(r"reprendre_les_abandonnes\(session,\s*limite=demarrage\)", corps), \
         "main() doit reprendre sans attendre le delai de peremption"

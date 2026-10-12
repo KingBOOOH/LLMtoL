@@ -210,15 +210,15 @@ def check_center_of_mass(voxels):
     filled = np.argwhere(voxels != 0)
     if len(filled) == 0:
         return []
-    cx = int(round(filled[:, 0].mean()))
-    cy = int(round(filled[:, 1].mean()))
+    cx = round(filled[:, 0].mean())
+    cy = round(filled[:, 1].mean())
     cx = min(max(cx, 0), voxels.shape[0] - 1)
     cy = min(max(cy, 0), voxels.shape[1] - 1)
     if voxels[cx, cy, 0] == 0:
-        return [
+        return [(
             f"centre de masse projete en ({cx},{cy}) ne repose sur aucun voxel du sol "
             "(z=0) — la structure pourrait etre instable/desequilibree"
-        ]
+        )]
     return []
 
 
@@ -240,10 +240,10 @@ def check_ground_contact(voxels):
     z_min = int(filled[:, 2].min())
     if z_min == 0:
         return 0, []
-    return z_min, [
+    return z_min, [(
         f"le modele ne touche pas le sol : sa partie la plus basse est a z={z_min} "
         f"au lieu de z=0 (decale tout de {z_min} plate(s) vers le bas)"
-    ]
+    )]
 
 
 def resume_constructibilite(rapport):

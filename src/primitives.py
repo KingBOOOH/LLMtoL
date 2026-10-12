@@ -54,7 +54,7 @@ def pyramid(base, height):
     """Pyramide a base carree : chaque couche retrecit regulierement vers le sommet."""
     grid = np.zeros((base, base, height), dtype=np.int16)
     for z in range(height):
-        shrink = int(round(z * (base / 2.0) / height))
+        shrink = round(z * (base / 2.0) / height)
         lo, hi = shrink, base - shrink
         if hi <= lo:
             break

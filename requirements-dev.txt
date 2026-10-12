@@ -1,0 +1,8 @@
+# Outils de developpement uniquement. N'a rien a faire dans requirements.txt :
+# la chaine de generation n'en a pas besoin pour tourner.
+#
+#     pip install -r requirements-dev.txt
+#     python -m ruff check .
+#     python -m pytest tests/ -q
+ruff==0.17.0
+pytest==8.3.4

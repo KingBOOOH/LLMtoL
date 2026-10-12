@@ -17,7 +17,6 @@ from src.primitives import (
     voxel_iou,
 )
 
-
 # ---------- generateurs ----------
 
 def test_cube_is_fully_filled():

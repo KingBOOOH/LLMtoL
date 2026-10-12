@@ -10,11 +10,17 @@ de pieces, les .ldr d'etapes et le HTML.
 
 import os
 import sys
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.compiler import compile_design
-from src.instructions import (PIECES_PAR_ETAPE, piece_key, split_steps,
-                              write_notice_html, write_step_models)
+from src.instructions import (
+    PIECES_PAR_ETAPE,
+    piece_key,
+    split_steps,
+    write_notice_html,
+    write_step_models,
+)
 from src.tiler import tile
 
 
@@ -77,8 +83,8 @@ def test_write_step_models_cumulatif(tmp_path):
     for i, d in enumerate(dossiers, 1):
         ldr = os.path.join(d, "model.ldr")
         assert os.path.isfile(ldr), f"etape {i} sans model.ldr"
-        lignes = [l for l in open(ldr, encoding="utf-8").read().splitlines()
-                  if l.startswith("1 ")]
+        lignes = [ligne for ligne in Path(ldr).read_text(encoding="utf-8").splitlines()
+                  if ligne.startswith("1 ")]
         attendu = sum(len(e) for e in etapes[:i])
         assert len(lignes) == attendu, f"etape {i} : {len(lignes)} pieces au lieu de {attendu}"
 

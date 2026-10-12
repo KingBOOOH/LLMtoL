@@ -462,11 +462,24 @@ python -m tools.recover_eval eval/results/_work/v1 v1_recovered
 
 ---
 
-## Tests
+## Tests et qualité
 
 ```powershell
-python -m pytest tests/ -q
+pip install -r requirements-dev.txt
+
+python -m ruff check .        # linter + tri des imports
+python -m ruff check . --fix  # corrige ce qui est sûr
+python -m pytest tests/ -q    # 140 tests
 ```
+
+Le linter garde le jeu de règles **par défaut** de `ruff` plutôt qu'une sélection
+choisie à l'avance : au premier passage il a trouvé un `except:` nu qui attrapait
+jusqu'au `Ctrl+C`, deux imports morts et une variable déballée jamais lue. Chaque règle
+désactivée porte sa raison dans `pyproject.toml`.
+
+Les captures larges (`except Exception`) qui sont **volontaires** — les frontières où un
+échec ne doit pas tout emporter — sont marquées une par une par un `noqa` commenté,
+plutôt que désactivées globalement. Une négligence future sera donc signalée.
 
 136 tests, couvrant le schéma DSL, le compilateur, le pavage, le validateur, les
 primitives, la nomenclature, le découpage en étapes, la notice PDF et la
