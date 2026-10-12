@@ -186,6 +186,48 @@ Conséquence sur la métrique : un IoU de 1.0 sur prim_cylindre mesure désormai
 modèle a choisi la bonne opération et les bons paramètres, plus qu'il a su tracer un
 cercle. Ce n'est pas la même chose, et c'est voulu.
 
+prim_escalier (0.149, pire cas du jeu) : DIAGNOSTIQUE. Le modele construit un escalier
+GEOMETRIQUEMENT PARFAIT. Deux causes distinctes expliquent le score, et une seule est de
+sa faute.
+
+1. ERREUR DU MODELE — 3 plates par marche au lieu d'une. Il raisonne en briques
+   (1 brique = 3 plates), alors que le prompt dit explicitement "la premiere marche fait
+   1 plate de haut". Volume produit : 180 voxels contre 60 attendus, exactement 3x.
+   C'est ENCORE le planificateur, pas le designer : les plans ecrivent z=0..2, z=3..5,
+   ... et une boite de 15 plates ; le designer obeit fidelement. Meme schema que le
+   decalage z.
+
+2. ARTEFACT DE MESURE — l'escalier est tourne de 270 degres par rapport a la reference.
+   Le prompt n'impose AUCUNE orientation. voxel_iou recadre sur le contenu mais ne
+   tourne pas : il punissait une reponse correcte.
+
+Decomposition mesuree, tentative 1 :
+  tel quel                              0.200
+  rotation autorisee                    0.333
+  hauteur corrigee                      0.429
+  hauteur corrigee + rotation autorisee 1.000   <- la forme etait exacte
+
+D'ou src/primitives.voxel_iou_oriente() : meilleur IoU parmi les 8 orientations du plan
+horizontal (le haut et le bas restent fixes, un modele a l'envers ne tiendrait pas
+debout). Rapportee EN PLUS de voxel_iou, colonne iou_oriente du CSV — jamais a sa place,
+remplacer la metrique principale casserait la comparabilite de tout l'historique.
+
+DEUX CORRECTIONS DE PROMPT ONT ETE ESSAYEES ET MESUREES. Les deux sont SANS EFFET, ne
+pas les retenter :
+  a) consigne explicite "quand la description donne une hauteur en plates, utilise
+     exactement ce nombre, ne l'arrondis pas en briques" -> 0.200 (bruit). Verifie que
+     la consigne partait bien dans la requete : elle y etait, le modele l'a ignoree 3
+     fois sur 3.
+  b) reformulation faisant de la plate l'unite par defaut et de la brique une
+     information secondaire -> 0.198. Plan produit mot pour mot identique.
+Le prompt a ete restaure a l'identique : une ligne qui ne fait rien coute des tokens et
+laisse croire que le cas est traite. Temoin prim_tour : 1.000 dans les deux essais, donc
+ces formulations ne degradaient rien ailleurs non plus.
+
+Ce qui reste a tenter, si on y revient : agir cote jeu de test (le prompt figé dit
+"1 plate", le modele comprend "1 niveau") ou accepter que ce cas mesure la capacite du
+modele a respecter une unite, ce qu'il ne fait pas ici.
+
 La sphère est ronde dans la grille mais APLATIE à l'écran (~2.5x) : `diameter` vaut
 autant de tenons en X/Y que de plates en Z, or un tenon fait 20 LDU et une plate 8.
 src/primitives.py assume ce choix et les références d'IoU l'utilisent ; changer l'un
@@ -262,7 +304,9 @@ Priorité 2 :
   Décision à prendre : reformuler ce prompt du jeu figé (ce qui casse la comparabilité
   de tout l'historique) ou accepter que ce cas mesure l'obéissance au prompt.
 
-  prim_escalier reste le pire cas du jeu (0.139) et n'a jamais été diagnostiqué.
+  prim_escalier : diagnostiqué (voir plus haut). La forme est exacte ; le score
+  vient d'une confusion plate/brique du planificateur et d'une rotation que la
+  métrique ne tolère pas. Deux correctifs de prompt essayés, mesurés, sans effet.
 
 Priorité 3 :
   LPub3D n'a jamais été évalué avant d'écrire src/instructions.py (le plan le demandait).
@@ -301,7 +345,7 @@ Prérequis vérifiables d'un coup : python tools/check_env.py
 
 Commandes utiles
 
-python -m pytest tests/ -q                      tests (140)
+python -m pytest tests/ -q                      tests (145)
 python -m ruff check .                          linter (pip install -r requirements-dev.txt)
 python tools/check_env.py                       diagnostic environnement
 python lego.py "<prompt>"                       UN modèle complet, en une commande
