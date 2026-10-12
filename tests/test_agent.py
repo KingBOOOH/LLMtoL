@@ -288,3 +288,47 @@ def test_render_all_branche_le_suivi_quand_on_lui_en_donne_un():
     finally:
         pipeline._rendre_en_suivant, pipeline.subprocess.run = suivi, brut
         (racine / "_manifest_test_suivi.txt").unlink(missing_ok=True)
+
+
+# --- Regeneration : repartir d'un dossier incomplet --------------------------------
+
+def test_chemins_manquants_sur_un_dossier_vide(tmp_path):
+    """Une regeneration peut partir d'un dossier efface : tout est a refaire."""
+    import agent as agent_mod
+
+    manquant = agent_mod.chemins_manquants(str(tmp_path))
+    assert manquant == {"ldr": True, "rendus": True}
+
+
+def test_chemins_manquants_sur_un_dossier_complet(tmp_path):
+    """Le rendu des quatre vues coute plusieurs minutes : on ne le refait pas pour
+    rien quand il est deja la."""
+    import agent as agent_mod
+
+    (tmp_path / "model.ldr").write_text("0 test\n", encoding="utf-8")
+    (tmp_path / "render_iso.png").write_bytes(b"\x89PNG")
+    assert agent_mod.chemins_manquants(str(tmp_path)) == {"ldr": False, "rendus": False}
+
+
+def test_un_ldr_present_sans_rendu_ne_fait_refaire_que_le_rendu(tmp_path):
+    """Cas du changement de moteur de rendu : le modele est bon, les images non."""
+    import agent as agent_mod
+
+    (tmp_path / "model.ldr").write_text("0 test\n", encoding="utf-8")
+    assert agent_mod.chemins_manquants(str(tmp_path)) == {"ldr": False, "rendus": True}
+
+
+def test_la_phase_2_reconstruit_avant_de_composer():
+    """Verrouille l'ordre : si la reconstruction passait APRES preparer_notice, une
+    regeneration sur dossier efface echouerait au lieu de se reparer."""
+    import re
+
+    import agent as agent_mod
+
+    source = Path(agent_mod.__file__).read_text(encoding="utf-8")
+    corps = source[source.index("def finir("):source.index("def traiter_un(")]
+    i_recons = corps.index("chemins_manquants(iter_dir)")
+    i_notice = corps.index("pipeline.preparer_notice(")
+    assert i_recons < i_notice, "la reconstruction doit preceder la notice"
+    assert re.search(r"os\.makedirs\(iter_dir", corps), \
+        "le dossier doit etre recree s'il a disparu"

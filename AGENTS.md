@@ -40,6 +40,10 @@ pipeline.py
 agent.py
   Prend les jobs déposés en base par l'API web et les traite sur l'hôte (Blender et
   LM Studio y sont). Reprend un job abandonné après une coupure mémoire.
+  Sert aussi de chemin de RÉGÉNÉRATION : l'API remet un job terminé en `en_finition`
+  et toute la chaîne en aval du design est rejouée, sans aucun appel LLM. L'agent
+  reconstruit ce qui manque sur disque (chemins_manquants) plutôt que de refuser de
+  partir d'un dossier incomplet.
 
 Génération (appels LLM) :
 
@@ -121,6 +125,13 @@ Avertissement, pénalisé au score :
 bloquant. Le contrôle se déclenche sur des constructions parfaitement normales (les
 plaques centrales d'un toit plat au-dessus d'une pièce creuse) ; utilisé comme barrière,
 il faisait échouer quasiment toute génération.
+
+Schema de la base : db/init.sql n'est joue qu'a la CREATION du volume Postgres. Un
+ajout de colonne sur une base en service passe donc par server.db.assurer_schema(),
+idempotent, appele au demarrage de l'API et de l'agent. Pas d'Alembic : une colonne ne
+justifie pas un outil de migration et son etat a garder coherent entre le conteneur et
+l'hote. jobs.origine_id relie les essais successifs d'un meme prompt et pointe TOUJOURS
+la racine, jamais l'essai precedent.
 
 Problèmes connus à surveiller
 
@@ -345,7 +356,7 @@ Prérequis vérifiables d'un coup : python tools/check_env.py
 
 Commandes utiles
 
-python -m pytest tests/ -q                      tests (145)
+python -m pytest tests/ -q                      tests (169)
 python -m ruff check .                          linter (pip install -r requirements-dev.txt)
 python tools/check_env.py                       diagnostic environnement
 python lego.py "<prompt>"                       UN modèle complet, en une commande

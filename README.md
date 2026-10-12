@@ -238,6 +238,39 @@ C'est la seule matière pour comprendre plus tard *ce que* le modèle rate.
 
 La nomenclature n'est **pas** stockée : c'est une fonction pure de `design_json`.
 
+### Refaire ou relancer
+
+Deux actions voisines dont les coûts n'ont rien à voir — et la distinction est tout
+l'intérêt de garder `design_json` :
+
+| | repart de | coût | pour quoi |
+|---|---|---|---|
+| **Refaire la notice** | `design_json` | **aucun appel LLM** | reconstruire rendus, notice et PDF du modèle existant — après un changement de moteur de rendu ou de mise en page, ou si un fichier a été effacé |
+| **Relancer** | `prompt` | N générations | obtenir de nouvelles propositions quand aucune ne convient |
+
+« Refaire » remet simplement le job en `en_finition` : toute la chaîne en aval du design
+étant déterministe, l'agent la rejoue entièrement. Il reconstruit au passage ce qui
+manque sur disque (`agent.chemins_manquants`) — le `.ldr` depuis `design_json`, les
+quatre vues si elles ont disparu — au lieu de refuser de partir d'un dossier incomplet.
+
+« Relancer » crée un **nouveau** job rattaché à l'essai d'origine par `jobs.origine_id`.
+L'ancien n'est jamais écrasé : ses sorties vivent dans son propre `outputs/job_<id>/`.
+Le coût est annoncé avant de lancer, parce qu'une proposition se compte en minutes.
+
+Le rattachement n'est pas qu'un confort d'affichage. Il rend enfin mesurable la
+**variance du modèle sur une même demande**, ce que le projet n'a jamais su faire —
+c'est exactement ce qui manquait pour juger le recul de `prim_sphere`, où deux
+générations exploitables ne disent rien de solide.
+
+`origine_id` pointe **toujours** la racine, jamais l'essai précédent : un seul niveau,
+donc regrouper les tentatives est un filtre et non une remontée d'arbre.
+
+Un ajout de colonne sur une base déjà en service ne peut pas passer par `db/init.sql`,
+qui n'est joué qu'à la création du volume Postgres : `server.db.assurer_schema()` le
+fait en idempotent au démarrage de l'API et de l'agent. Pas d'Alembic — une colonne
+ne justifie pas un outil de migration et son état à garder cohérent entre le conteneur
+et l'hôte.
+
 ---
 
 ## Le DSL
@@ -503,7 +536,7 @@ pip install -r requirements-dev.txt
 
 python -m ruff check .        # linter + tri des imports
 python -m ruff check . --fix  # corrige ce qui est sûr
-python -m pytest tests/ -q    # 145 tests
+python -m pytest tests/ -q    # 169 tests
 ```
 
 Le linter garde le jeu de règles **par défaut** de `ruff` plutôt qu'une sélection
@@ -515,10 +548,24 @@ Les captures larges (`except Exception`) qui sont **volontaires** — les fronti
 échec ne doit pas tout emporter — sont marquées une par une par un `noqa` commenté,
 plutôt que désactivées globalement. Une négligence future sera donc signalée.
 
-136 tests, couvrant le schéma DSL, le compilateur, le pavage, le validateur, les
-primitives, la nomenclature, le découpage en étapes, la notice PDF et la
-détection du piège LM Studio.
-Deux d'entre eux valent d'être signalés : l'un verrouille le fait que le DSL exprime
+169 tests, couvrant le schéma DSL, le compilateur, le pavage, le validateur, les
+primitives, la nomenclature, le découpage en étapes, la notice PDF, les règles de
+relance de l'API et la détection du piège LM Studio.
+
+Les règles de l'API sont testées via `server/regles.py`, qui n'importe ni FastAPI ni la
+base : `fastapi` n'est installé que dans le conteneur, donc un test qui importerait
+`server/app.py` ne tournerait nulle part sur l'hôte. Un autre test vérifie que
+l'interface n'appelle que des routes réellement déclarées — les deux côtés vivent dans
+des fichiers séparés et aucun build ne les relie, une faute de frappe dans une URL ne
+se verrait sinon qu'à l'exécution, sous la forme d'un bouton qui ne fait rien.
+
+L'interface elle-même est vérifiée en chargeant son vrai script avec un `Vue.createApp`
+de substitution : le framework est absent, le code testé est bien celui du fichier servi.
+`node` sert là d'interpréteur de vérification, pas de dépendance du projet — l'image ne
+contient toujours pas node et ces tests se sautent s'il manque. Un harnais frontend
+complet reste à faire (US V2-10).
+
+Trois d'entre eux valent d'être signalés : l'un verrouille le fait que le DSL exprime
 *exactement* un cylindre ou une sphère (IoU aller-retour = 1,0), l'autre que resserrer
 le `bbox` resserre **aussi** les coordonnées — sans quoi la borne de taille ne
 garantirait rien.
