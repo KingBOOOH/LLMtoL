@@ -320,3 +320,37 @@ def test_le_titre_dit_ce_qu_on_attend_de_l_utilisateur():
     ):
         ctx = {"ouvert": _job(status=status, phase=phase), "jobs": []}
         assert _computed("titreDuFocus", ctx) == attendu, status
+
+
+# --- Mode d'emploi de la liste d'achat --------------------------------------------
+
+@sans_node
+def test_le_panneau_d_achat_part_ferme_et_se_replie():
+    """Question posee a l'usage : le bouton telechargeait un .xml sans dire ou il va.
+    Il ouvre maintenant un mode d'emploi, qu'un second clic referme."""
+    resultat = _executer("""
+      const d = opt.data();
+      return { depart: d.achat, aCopie: typeof opt.methods.copierListeAchat === 'function' };
+    """)
+    assert resultat["depart"] is None
+    assert resultat["aCopie"] is True
+
+
+def test_le_mode_d_emploi_dit_ou_va_le_fichier():
+    """Trois choses que l'utilisateur ne pouvait pas deviner : c'est une wanted list
+    et pas un panier, l'option a choisir s'appelle "Upload BrickLink XML format", et
+    c'est Buy All qui remplit ensuite les paniers."""
+    html = INDEX.read_text(encoding="utf-8")
+    assert "https://www.bricklink.com/v2/wanted/upload.page" in html
+    assert "Upload BrickLink XML format" in html
+    assert "Buy All" in html
+    assert "wanted list" in html
+
+
+def test_le_lien_externe_s_ouvre_sans_donner_la_main_a_la_page_cible():
+    """target=_blank sans rel=noopener laisse la page ouverte manipuler la notre."""
+    html = INDEX.read_text(encoding="utf-8")
+    bloc = html[html.index("bricklink.com/v2/wanted/upload.page") - 200:]
+    bloc = bloc[:400]
+    assert 'target="_blank"' in bloc
+    assert 'rel="noopener"' in bloc

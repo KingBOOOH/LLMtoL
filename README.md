@@ -397,10 +397,20 @@ séparées dans `src/catalog.py`, jamais un champ de plus dans la même.
 Il n'existe d'ailleurs **aucun fichier de correspondance officiel** entre les deux
 numérotations — les discussions LDraw renvoient toutes à des bases tierces.
 
-Le fichier produit est une *wanted list* XML importable telle quelle dans BrickLink
-(`Want` > `Upload`). Son format vient de la page d'aide de BrickLink, pas d'une
-supposition — et il réserve un piège : **le fichier ne doit pas porter de déclaration
-`<?xml ?>`**.
+Le fichier produit est une *wanted list* XML. Son format vient de la page d'aide de
+BrickLink, pas d'une supposition — et il réserve un piège : **le fichier ne doit pas
+porter de déclaration `<?xml ?>`**.
+
+**Ce n'est pas un panier, et l'interface le dit.** Livré sans mode d'emploi, le fichier
+n'était pas utilisable : l'import de panier de BrickLink attend un autre format, et la
+confusion est immédiate. Le bouton ouvre donc un mode d'emploi en quatre points — lien
+direct vers `Want` > `Upload`, option *Upload BrickLink XML format* à choisir,
+téléchargement **ou** copie du contenu, puis *Buy All*.
+
+Pourquoi aucune URL ne peut « remplir le panier » d'un coup : un panier appartient à
+**un seul magasin**, et un modèle de plusieurs centaines de pièces se répartit sur des
+dizaines de vendeurs. C'est le *Buy All* de BrickLink qui cherche la combinaison de
+magasins, à partir de la wanted list.
 
 ```
 wanted_list.xml          produit à côté de bom.csv, par les trois chemins de génération
@@ -776,7 +786,7 @@ pip install -r requirements-dev.txt
 
 python -m ruff check .        # linter + tri des imports
 python -m ruff check . --fix  # corrige ce qui est sûr
-python -m pytest tests/ -q    # 254 tests
+python -m pytest tests/ -q    # 257 tests
 ```
 
 Le linter garde le jeu de règles **par défaut** de `ruff` plutôt qu'une sélection
@@ -788,7 +798,7 @@ Les captures larges (`except Exception`) qui sont **volontaires** — les fronti
 échec ne doit pas tout emporter — sont marquées une par une par un `noqa` commenté,
 plutôt que désactivées globalement. Une négligence future sera donc signalée.
 
-254 tests, couvrant le schéma DSL, le compilateur, le pavage, le validateur, les
+257 tests, couvrant le schéma DSL, le compilateur, le pavage, le validateur, les
 primitives, la nomenclature, le découpage en étapes, la notice PDF, les règles de
 relance de l'API et la détection du piège LM Studio.
 

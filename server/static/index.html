@@ -205,6 +205,17 @@
   }
   .loupe img { max-width: min(760px, 100%); max-height: 85vh; border-radius: 10px; }
   .vide-doux { color: var(--doux); font-size: 14px; }
+
+  /* Mode d'emploi du fichier d'achat. Lacher un .xml sans dire ou il va, c'est
+     livrer un travail que personne ne sait utiliser. */
+  .mode-emploi { background: var(--carte-haut); border: 1px solid var(--bord);
+                 border-radius: var(--rayon); padding: 14px 16px; margin-top: 16px;
+                 font-size: 13.5px; }
+  .mode-emploi ol { margin: 8px 0 0; padding-left: 20px; color: var(--doux); }
+  .mode-emploi li { padding: 3px 0; }
+  .mode-emploi a { color: var(--accent); }
+  .mode-emploi .note { color: var(--doux); margin: 10px 0 0; font-size: 12.5px; }
+  .copie { color: var(--ok); font-size: 12.5px; margin-left: 8px; }
   @media (max-width: 560px) { .ligne > div { flex: 1 1 100%; } }
 </style>
 </head>
@@ -360,8 +371,8 @@
         <span v-else class="vide-doux">Pas de notice PDF pour ce modèle.</span>
       </div>
       <div style="flex:0 0 auto" v-if="retenueDe(focus)">
-        <button class="discret" @click="telechargerListeAchat(focus)">
-          Liste d'achat BrickLink
+        <button class="discret" @click="achat = achat === focus.id ? null : focus.id">
+          Acheter les pièces&hellip;
         </button>
       </div>
       <div style="flex:0 0 auto" v-if="!enTravaux(focus) && retenueDe(focus)">
@@ -377,6 +388,38 @@
       <div style="flex:0 0 auto" v-if="ouvert">
         <button class="discret" @click="ouvert = null">Fermer</button>
       </div>
+    </div>
+
+    <!-- Ou va ce fichier, et pourquoi ce n'est pas un panier. Question posee a
+         l'usage : BrickLink n'accepte un XML que dans une WANTED LIST, et son import
+         de panier attend un autre format. Surtout, un panier appartient a UN magasin
+         alors que les pieces viennent de dizaines de vendeurs : aucune URL ne peut
+         remplir un panier d'un coup. Le chemin reel passe par la wanted list. -->
+    <div v-if="achat === focus.id" class="mode-emploi">
+      <strong>Liste d'achat BrickLink</strong> &mdash; c'est une <em>wanted list</em>,
+      pas un panier.
+      <ol>
+        <li>
+          <a href="https://www.bricklink.com/v2/wanted/upload.page" target="_blank"
+             rel="noopener">Ouvrir la page d'import BrickLink</a>
+          (il faut être connecté)
+        </li>
+        <li>Choisir l'option <em>Upload BrickLink XML format</em></li>
+        <li>
+          Fournir le fichier, ou en coller le contenu :
+          <button class="discret" @click="telechargerListeAchat(focus)">Télécharger le .xml</button>
+          <button class="discret" @click="copierListeAchat(focus)">Copier le contenu</button>
+          <span v-if="copie === focus.id" class="copie">copié</span>
+        </li>
+        <li>Une fois la liste importée, le bouton <em>Buy All</em> de BrickLink cherche
+            la combinaison de magasins qui la remplit, et peut choisir les vendeurs
+            automatiquement.</li>
+      </ol>
+      <p class="note">
+        Pourquoi pas un panier directement : un panier appartient à un seul magasin, et
+        un modèle de plusieurs centaines de pièces se répartit sur des dizaines de
+        vendeurs. C'est <em>Buy All</em> qui fait ce travail, à partir de la liste.
+      </p>
     </div>
 
     <!-- Le cout est annonce AVANT de lancer : une relance mobilise le modele
@@ -466,7 +509,7 @@ Vue.createApp({
       prompt: "", taille: "", nVariantes: 4,
       jobs: [], statut: { agent_actif: false, agent: null },
       ouvert: null, loupe: null, erreur: "", envoi: false, choix: false,
-      relance: null, relanceN: 4, complement: false,
+      relance: null, relanceN: 4, complement: false, achat: null, copie: null,
     };
   },
   computed: {
@@ -575,6 +618,22 @@ Vue.createApp({
     // cote de la notice, donc absent des modeles generes avant cette version : la
     // route renvoie alors un message qui dit quoi faire.
     telechargerListeAchat(j) { window.location = `/api/jobs/${j.id}/wanted-list`; },
+    // Coller marche aussi bien que fournir le fichier sur la page d'import, et evite
+    // d'aller chercher un .xml dans le dossier des telechargements.
+    async copierListeAchat(j) {
+      try {
+        const r = await fetch(`/api/jobs/${j.id}/wanted-list`);
+        if (!r.ok) throw new Error("liste d'achat indisponible");
+        await navigator.clipboard.writeText(await r.text());
+        this.copie = j.id;
+        setTimeout(() => { if (this.copie === j.id) this.copie = null; }, 4000);
+      } catch (e) {
+        // Le presse-papiers peut etre refuse (contexte non securise, permission) :
+        // le telechargement reste disponible juste a cote, on le dit plutot que
+        // d'echouer en silence.
+        this.erreur = "Copie impossible (" + e.message + "). Utilise le téléchargement.";
+      }
+    },
 
     // Refait rendus, notice et PDF depuis le design deja en base : aucun appel au
     // modele, donc rien a confirmer.
