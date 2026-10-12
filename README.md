@@ -421,6 +421,63 @@ liste le signale et nomme l'équivalent actuel (*Light / Dark Bluish Gray*). Cha
 palette serait une décision produit, pas une correction : elle modifierait la couleur de
 tous les modèles déjà générés.
 
+### Suivre ce qui se passe
+
+Une génération dure de trente secondes à dix minutes. L'interface n'affichait qu'un
+libellé d'étape (« design », « rendu des etapes ») : on ne savait ni où l'on en était
+dans la suite des phases, ni s'il restait une minute ou dix, ni même — en lançant une
+demande — si quelque chose était parti.
+
+Elle affiche maintenant la suite complète des étapes, avec celle en cours mise en
+évidence et son compteur :
+
+```
+[x] Envoi au modèle
+[x] Proposition 1 sur 4
+[>] Proposition 2 sur 4
+[ ] Proposition 3 sur 4
+[ ] Proposition 4 sur 4
+[ ] Images des propositions
+[ ] Ton choix
+[ ] Nomenclature et étapes de montage
+[ ] Images de la notice          50 / 111
+[ ] Notice PDF
+```
+
+Les propositions sont détaillées une par une parce que c'est la partie longue, et que
+« proposition 2 sur 4 » répond à la seule question qu'on se pose en attendant.
+
+L'agent écrit son avancement en texte libre ; la traduction en identifiants stables se
+fait **côté serveur**, en un seul endroit (`server/regles.py`). L'interface n'interprète
+rien. Un test relit les chaînes écrites dans `agent.py` et `server/app.py` et exige
+qu'elles soient toutes connues : ajouter une étape sans la déclarer casse le test au
+lieu de faire silencieusement retomber la barre dans l'inconnu.
+
+### Un seul panneau, celui qu'on regarde
+
+Deux sections se faisaient concurrence — « job en cours » et « détail » — et la première
+ne désignait qu'une demande, en donnant la priorité à celle qui attendait un choix.
+Défaut vicieux : une demande laissée en attente masquait en permanence celle que l'agent
+était en train de traiter, et plus rien ne semblait avancer.
+
+Il n'y a plus qu'un panneau. Il suit **ce sur quoi on a cliqué**, sinon ce qui travaille
+vraiment. Les propositions, le choix, les quatre vues, la notice et les actions y vivent
+ensemble, pour la demande qu'on regarde — plus de duplication de gabarit, et l'option de
+régénération n'apparaît que sur la demande concernée.
+
+### Quand une proposition n'aboutit pas
+
+Le validateur rejette ce qui ne tient pas debout, et c'est fréquent. L'utilisateur se
+retrouvait alors avec moins de choix que demandé, sans autre recours que de tout
+relancer — y compris les propositions réussies, qu'il aurait fallu re-rendre pour rien.
+
+Un bouton propose de ne reproduire **que les manquantes**, dans le même job.
+`agent.indices_a_produire` rend la production reprenable : les propositions déjà
+abouties sont intactes, seules les ratées sont rejouées, en réutilisant leur indice.
+
+Et l'historique ne montre plus de case grise : la vignette retombe sur la première
+proposition rendue quand il n'y a pas encore de variante retenue.
+
 ### Refaire ou relancer
 
 Deux actions voisines dont les coûts n'ont rien à voir — et la distinction est tout
@@ -719,7 +776,7 @@ pip install -r requirements-dev.txt
 
 python -m ruff check .        # linter + tri des imports
 python -m ruff check . --fix  # corrige ce qui est sûr
-python -m pytest tests/ -q    # 220 tests
+python -m pytest tests/ -q    # 252 tests
 ```
 
 Le linter garde le jeu de règles **par défaut** de `ruff` plutôt qu'une sélection
@@ -731,7 +788,7 @@ Les captures larges (`except Exception`) qui sont **volontaires** — les fronti
 échec ne doit pas tout emporter — sont marquées une par une par un `noqa` commenté,
 plutôt que désactivées globalement. Une négligence future sera donc signalée.
 
-220 tests, couvrant le schéma DSL, le compilateur, le pavage, le validateur, les
+252 tests, couvrant le schéma DSL, le compilateur, le pavage, le validateur, les
 primitives, la nomenclature, le découpage en étapes, la notice PDF, les règles de
 relance de l'API et la détection du piège LM Studio.
 

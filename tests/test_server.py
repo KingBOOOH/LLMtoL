@@ -159,3 +159,118 @@ def test_les_deux_nouvelles_routes_sont_bien_la():
     declarees = _routes_declarees()
     assert "/api/jobs/{job_id}/relancer" in declarees
     assert "/api/jobs/{job_id}/regenerer" in declarees
+
+
+# --- avancement lisible -----------------------------------------------------------
+
+def test_chaque_etape_ecrite_par_l_agent_est_traduite():
+    """L'agent ecrit son avancement en texte libre. Une etape ajoutee sans etre
+    declaree dans PHASES_PAR_ETAPE ferait retomber la barre dans l'inconnu, en
+    silence : ce test relit les chaines dans le code et exige qu'elles soient
+    toutes connues."""
+    from server.regles import PHASES_PAR_ETAPE
+
+    ecrites = set()
+    for fichier in ("agent.py", "server/app.py"):
+        source = (RACINE / fichier).read_text(encoding="utf-8")
+        ecrites |= set(re.findall(r'_etat\(session, job, "([^"]+)"', source))
+        ecrites |= set(re.findall(r'job\.etape = "([^"]+)"', source))
+
+    assert ecrites, "aucune etape trouvee : l'extraction est cassee"
+    inconnues = ecrites - set(PHASES_PAR_ETAPE)
+    assert not inconnues, f"etapes non traduites : {sorted(inconnues)}"
+
+
+def test_le_statut_prime_sur_l_etape():
+    """Un job termine ne doit pas afficher comme en cours la derniere etape
+    traversee, et un job en attente n'a pas commence meme s'il porte l'etape d'une
+    tentative precedente."""
+    from server.regles import phase_de
+
+    assert phase_de("terminee", "rendu des etapes") == "fini"
+    assert phase_de("en_attente", "design") == "file"
+    assert phase_de("echec", "notice PDF") == "echec"
+    assert phase_de("a_choisir", None) == "choix"
+
+
+def test_une_etape_inconnue_ne_fait_pas_disparaitre_la_barre():
+    """Repli volontaire : mieux vaut une barre un peu fausse qu'une interface vide."""
+    from server.regles import ORDRE_DES_PHASES, phase_de
+
+    assert phase_de("en_cours", "quelque chose de nouveau") in ORDRE_DES_PHASES
+
+
+def test_les_phases_traduites_existent_toutes_dans_l_ordre():
+    from server.regles import ORDRE_DES_PHASES, PHASES_PAR_ETAPE
+
+    assert set(PHASES_PAR_ETAPE.values()) <= set(ORDRE_DES_PHASES)
+
+
+# --- vignette d'historique --------------------------------------------------------
+
+class _VarianteV:
+    def __init__(self, is_chosen=False, render_dir=None, design_json=None, id="v"):
+        self.is_chosen = is_chosen
+        self.render_dir = render_dir
+        self.design_json = design_json
+        self.id = id
+
+
+def test_la_vignette_retombe_sur_la_premiere_proposition_rendue():
+    """Le defaut signale : une demande dont la premiere proposition a echoue
+    n'affichait qu'une case grise, alors que les suivantes etaient rendues."""
+    from server.regles import variante_vignette
+
+    job = _Job(status="a_choisir", variantes=[
+        _VarianteV(id="ratee"),
+        _VarianteV(id="bonne", render_dir="job_x/variante_02"),
+        _VarianteV(id="autre", render_dir="job_x/variante_03"),
+    ])
+    assert variante_vignette(job).id == "bonne"
+
+
+def test_la_vignette_prefere_la_variante_retenue():
+    from server.regles import variante_vignette
+
+    job = _Job(status="terminee", variantes=[
+        _VarianteV(id="premiere", render_dir="a"),
+        _VarianteV(id="retenue", render_dir="b", is_chosen=True),
+    ])
+    assert variante_vignette(job).id == "retenue"
+
+
+def test_aucune_vignette_quand_rien_n_est_rendu():
+    from server.regles import variante_vignette
+
+    assert variante_vignette(_Job(variantes=[_VarianteV(), _VarianteV()])) is None
+
+
+# --- propositions supplementaires -------------------------------------------------
+
+def test_on_compte_les_propositions_qui_n_ont_pas_abouti():
+    from server.regles import propositions_manquantes
+
+    job = _Job(status="a_choisir", n_variantes=4, variantes=[
+        _Variante(design_json=DESIGN), _Variante(design_json=DESIGN), _Variante()])
+    assert propositions_manquantes(job) == 2
+
+
+def test_completion_possible_seulement_au_moment_du_choix():
+    """Avant, les propositions sont encore en production ; apres, le choix est fait
+    et en ajouter n'aurait plus de sens."""
+    from server.regles import refus_de_completion
+
+    manquante = [_Variante(design_json=DESIGN), _Variante()]
+    assert refus_de_completion(_Job(status="a_choisir", n_variantes=2,
+                                    variantes=manquante)) is None
+    for status in ("en_cours", "en_attente", "terminee", "echec", "en_finition"):
+        assert refus_de_completion(_Job(status=status, n_variantes=2,
+                                        variantes=manquante))
+
+
+def test_rien_a_completer_quand_tout_a_abouti():
+    from server.regles import refus_de_completion
+
+    job = _Job(status="a_choisir", n_variantes=2,
+               variantes=[_Variante(design_json=DESIGN), _Variante(design_json=DESIGN)])
+    assert refus_de_completion(job)

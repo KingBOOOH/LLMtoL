@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from src import pdf
 from src.bom import build_bom
 from src.compiler import compile_design
 from src.instructions import split_steps
@@ -141,3 +142,30 @@ def test_pdf_reellement_produit(modele, tmp_path):
     assert len(donnees) > 2000
     # Le HTML intermediaire est conserve : il explique un PDF rate sans tout rejouer.
     assert os.path.isfile(tmp_path / "notice_pdf.html")
+
+
+def test_le_navigateur_est_lance_sans_memoire_partagee_du_conteneur():
+    """Dans un conteneur, /dev/shm vaut 64 Mo et Chromium s'y effondre EN SILENCE sur
+    une page lourde : une notice de 49 etapes passait, une de 111 ne produisait plus
+    rien. L'option le fait ecrire dans /tmp, et n'a aucun effet ailleurs."""
+    source = Path(pdf.__file__).read_text(encoding="utf-8")
+    assert "--disable-dev-shm-usage" in source
+
+
+def test_un_navigateur_qui_n_en_finit_pas_ne_fait_pas_echouer_le_job():
+    """TimeoutExpired n'est ni RuntimeError ni OSError : sans rattrapage, elle
+    echappait au `except` de l'appelant et faisait echouer tout le job pour un PDF
+    manquant, alors que le modele est bon."""
+    source = Path(pdf.__file__).read_text(encoding="utf-8")
+    corps = source[source.index("def html_vers_pdf("):source.index("def write_pdf(")]
+    assert "subprocess.TimeoutExpired" in corps
+    assert "raise RuntimeError" in corps
+
+
+def test_l_echec_du_navigateur_rapporte_sa_raison():
+    """La sortie du navigateur etait capturee puis jetee : l'erreur disait "aucun PDF"
+    sans jamais dire pourquoi, et il a fallu deviner."""
+    source = Path(pdf.__file__).read_text(encoding="utf-8")
+    corps = source[source.index("def html_vers_pdf("):source.index("def write_pdf(")]
+    assert "sortie.stderr" in corps
+    assert "sortie.returncode" in corps

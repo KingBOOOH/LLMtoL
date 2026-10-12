@@ -132,3 +132,191 @@ def test_ouvrir_la_relance_reprend_le_nombre_de_l_essai():
     """)
     assert resultat["ouvert"] == {"relance": "j1", "n": 6}
     assert resultat["apresSecondClic"] is None, "un second clic doit refermer"
+
+
+# --- Barre d'etapes ---------------------------------------------------------------
+
+def _etapes(job, jobs=None):
+    """Appelle etapesDe sur le vrai script de l'interface.
+
+    Le contexte herite de opt.methods : dans Vue, `this` porte toutes les methodes, et
+    etapesDe en appelle une autre (placeDansLaFile). Un objet nu suffisait aux
+    fonctions isolees, pas a celles qui s'appellent entre elles.
+    """
+    return _executer(f"""
+      const ctx = Object.assign(Object.create(opt.methods), {{ jobs: {json.dumps(jobs or [job])} }});
+      return opt.methods.etapesDe.call(ctx, {json.dumps(job)});
+    """)
+
+
+ORDRE = ["file", "design", "rendu_propositions", "choix", "notice", "rendu_notice", "pdf"]
+
+
+def _job(**kw):
+    base = {"id": "j1", "status": "en_cours", "phase": "design", "n_variantes": 4,
+            "etape_fait": None, "etape_total": None, "ordre_phases": ORDRE,
+            "created_at": "2026-10-12T10:00:00+00:00"}
+    base.update(kw)
+    return base
+
+
+@sans_node
+def test_chaque_proposition_a_sa_propre_etape():
+    """"proposition 2 sur 4" repond a la seule question qu'on se pose en attendant :
+    combien de temps encore. Un libelle "design" ne le disait pas."""
+    etapes = _etapes(_job(etape_fait=2, etape_total=4))
+    libelles = [e["libelle"] for e in etapes]
+    assert "Proposition 1 sur 4" in libelles
+    assert "Proposition 4 sur 4" in libelles
+    etats = {e["libelle"]: e["etat"] for e in etapes}
+    assert etats["Proposition 1 sur 4"] == "faite"
+    assert etats["Proposition 2 sur 4"] == "encours"
+    assert etats["Proposition 3 sur 4"] == "attente"
+
+
+@sans_node
+def test_un_job_termine_a_toutes_ses_etapes_faites():
+    """Sinon la derniere etape traversee resterait affichee comme en cours."""
+    etapes = _etapes(_job(status="terminee", phase="fini"))
+    assert {e["etat"] for e in etapes} == {"faite"}
+
+
+@sans_node
+def test_une_etape_en_cours_porte_son_compteur():
+    """C'est ce qui distingue "ca avance" de "c'est bloque" sur un rendu de 111
+    images."""
+    etapes = _etapes(_job(phase="rendu_notice", etape_fait=50, etape_total=111))
+    courante = next(e for e in etapes if e["etat"] == "encours")
+    assert courante["libelle"] == "Images de la notice"
+    assert courante["compteur"] == "50 / 111"
+
+
+@sans_node
+def test_une_seule_etape_est_en_cours_a_la_fois():
+    for phase in ("rendu_propositions", "choix", "notice", "pdf"):
+        etapes = _etapes(_job(phase=phase))
+        assert sum(1 for e in etapes if e["etat"] == "encours") == 1, phase
+
+
+@sans_node
+def test_un_job_en_file_annonce_sa_place():
+    """Repond a "il se passe quelque chose ?" sans avoir a aller voir les journaux."""
+    devant = _job(id="devant", status="en_cours", phase="design",
+                  created_at="2026-10-12T09:00:00+00:00")
+    attente = _job(id="apres", status="en_attente", phase="file",
+                   created_at="2026-10-12T10:00:00+00:00")
+    etapes = _etapes(attente, jobs=[devant, attente])
+    premiere = etapes[0]
+    assert premiere["etat"] == "encours"
+    assert "devant" in premiere["compteur"]
+
+
+@sans_node
+def test_un_echec_marque_les_etapes_atteintes_et_pas_les_suivantes():
+    etapes = _etapes(_job(status="echec", phase="echec"))
+    assert all(e["etat"] in ("ratee", "attente") for e in etapes)
+
+
+@sans_node
+def test_la_barre_ne_s_affiche_pas_quand_on_attend_l_utilisateur():
+    """`a_choisir` attend un clic : montrer une barre d'avancement y serait un
+    mensonge."""
+    resultat = _executer("""
+      return ['en_attente', 'en_cours', 'en_finition', 'a_choisir', 'terminee', 'echec']
+        .map(s => [s, opt.methods.enTravaux({ status: s })]);
+    """)
+    assert dict(resultat) == {"en_attente": True, "en_cours": True, "en_finition": True,
+                              "a_choisir": False, "terminee": False, "echec": False}
+
+
+@sans_node
+def test_la_raison_d_un_echec_est_raccourcie():
+    """Les messages du validateur listent chaque piece fautive sur des dizaines de
+    lignes : la carte n'en montre que la premiere."""
+    # Le message part en JSON : l'ecrire en toutes lettres dans le JavaScript
+    # demanderait d'echapper les sauts de ligne deux fois, et une erreur y serait
+    # invisible — c'est exactement ce qui s'est produit en ecrivant ce test.
+    message = ("structure disjointe : 2 composantes non connectees\n"
+               "piece flottante : 3007 en (6,0,16)\n"
+               "piece flottante : 3007 en (14,0,16)")
+    resultat = _executer(f"""
+      return [opt.methods.raisonCourte({json.dumps(message)}), opt.methods.raisonCourte("court")];
+    """)
+    assert "\n" not in resultat[0]
+    assert len(resultat[0]) <= 90
+    assert resultat[1] == "court"
+
+
+# --- Quelle demande le panneau suit-il ? ------------------------------------------
+
+def _computed(nom, ctx):
+    """Evalue une propriete calculee du vrai script, avec un contexte realiste.
+
+    Les proprietes calculees s'appellent entre elles (`focus` lit `actif`,
+    `titreDuFocus` lit `focus`) et appellent des methodes : le contexte doit donc
+    porter les unes et les autres, comme le `this` que Vue fournit.
+    """
+    corps = (
+        "const ctx = Object.create(opt.methods);"
+        "Object.assign(ctx, " + json.dumps(ctx) + ");"
+        "for (const [cle, fn] of Object.entries(opt.computed)) {"
+        "  Object.defineProperty(ctx, cle, { get: () => fn.call(ctx) });"
+        "}"
+        "return ctx[" + json.dumps(nom) + "];"
+    )
+    return _executer(corps)
+
+
+@sans_node
+def test_ce_qui_travaille_passe_avant_ce_qui_attend_un_clic():
+    """Le defaut signale : une demande laissee en attente de choix masquait en
+    permanence celle que l'agent traitait, et plus rien ne semblait avancer."""
+    ctx = {"ouvert": None, "jobs": [
+        _job(id="attend", status="a_choisir", phase="choix"),
+        _job(id="travaille", status="en_finition", phase="rendu_notice"),
+    ]}
+    assert _computed("actif", ctx)["id"] == "travaille"
+
+
+@sans_node
+def test_une_demande_en_file_passe_apres_celle_qui_travaille():
+    ctx = {"ouvert": None, "jobs": [
+        _job(id="file", status="en_attente", phase="file"),
+        _job(id="travaille", status="en_cours", phase="design"),
+    ]}
+    assert _computed("actif", ctx)["id"] == "travaille"
+
+
+@sans_node
+def test_le_clic_de_l_utilisateur_prime_sur_le_choix_automatique():
+    """Cliquer une demande dans l'historique doit l'afficher, meme si une autre
+    travaille : c'est la seule facon de revoir une demande terminee."""
+    ouvert = _job(id="choisi", status="terminee", phase="fini")
+    ctx = {"ouvert": ouvert, "jobs": [
+        _job(id="travaille", status="en_cours", phase="design"), ouvert]}
+    assert _computed("focus", ctx)["id"] == "choisi"
+
+
+@sans_node
+def test_sans_clic_le_panneau_suit_ce_qui_travaille():
+    ctx = {"ouvert": None, "jobs": [_job(id="travaille", status="en_cours")]}
+    assert _computed("focus", ctx)["id"] == "travaille"
+
+
+@sans_node
+def test_aucun_panneau_quand_il_n_y_a_rien_a_montrer():
+    ctx = {"ouvert": None, "jobs": [_job(id="fini", status="terminee", phase="fini")]}
+    assert _computed("focus", ctx) is None
+
+
+@sans_node
+def test_le_titre_dit_ce_qu_on_attend_de_l_utilisateur():
+    for status, phase, attendu in (
+        ("a_choisir", "choix", "Choisis ta proposition"),
+        ("en_cours", "design", "Génération en cours"),
+        ("en_attente", "file", "Génération en cours"),
+        ("echec", "echec", "Cette demande n'a pas abouti"),
+        ("terminee", "fini", "Résultat"),
+    ):
+        ctx = {"ouvert": _job(status=status, phase=phase), "jobs": []}
+        assert _computed("titreDuFocus", ctx) == attendu, status

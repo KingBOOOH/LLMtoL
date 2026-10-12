@@ -16,7 +16,16 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 
 from server.db import Job, Session, Variante, agent_actif, assurer_schema, racine_de
-from server.regles import refus_de_regeneration, refus_de_relance, verifier_n_variantes
+from server.regles import (
+    ORDRE_DES_PHASES,
+    phase_de,
+    propositions_manquantes,
+    refus_de_completion,
+    refus_de_regeneration,
+    refus_de_relance,
+    variante_vignette,
+    verifier_n_variantes,
+)
 
 # Racine des sorties, montee en LECTURE SEULE depuis l'hote (voir docker-compose).
 OUTPUTS_ROOT = os.path.abspath(os.environ.get("OUTPUTS_ROOT", "/outputs"))
@@ -78,6 +87,7 @@ def _variante_json(v):
 
 def _job_json(job, avec_variantes=True):
     retenue = next((v for v in job.variantes if v.is_chosen), None)
+    vignette = variante_vignette(job)
     data = {
         "id": str(job.id),
         "prompt": job.prompt,
@@ -95,7 +105,16 @@ def _job_json(job, avec_variantes=True):
         "created_at": job.created_at.isoformat() if job.created_at else None,
         "finished_at": job.finished_at.isoformat() if job.finished_at else None,
         "error_message": job.error_message,
+        # Phase stable, ordre des phases : l'interface dessine sa barre d'etapes a
+        # partir de ca, sans avoir a interpreter le texte francais de `etape`.
+        "phase": phase_de(job.status, job.etape),
+        "ordre_phases": ORDRE_DES_PHASES,
+        "propositions_manquantes": propositions_manquantes(job),
         "variante_retenue": str(retenue.id) if retenue else None,
+        # Vignette d'historique : la retenue, sinon la premiere proposition rendue.
+        # Sans ce repli, une demande dont la premiere proposition a echoue restait
+        # une case grise alors que les suivantes existaient.
+        "vignette": str(vignette.id) if vignette else None,
         "n_pieces": retenue.n_pieces if retenue else None,
         "a_un_pdf": bool(retenue and retenue.pdf is not None),
     }
@@ -260,6 +279,37 @@ def regenerer(job_id: str):
         job.etape = "regeneration"
         job.error_message = None
         job.finished_at = None
+        s.commit()
+        return _job_json(job)
+
+
+@app.post("/api/jobs/{job_id}/completer")
+def completer(job_id: str):
+    """Reproduit les propositions qui n'ont pas abouti, dans LE MEME job.
+
+    Une generation ratee n'est pas rare : le validateur rejette ce qui ne tient pas
+    debout. L'utilisateur se retrouvait alors avec moins de choix que demande, sans
+    autre recours que de tout relancer — y compris les propositions reussies, qu'il
+    aurait fallu re-rendre pour rien.
+
+    Le job repasse en `en_attente` : l'agent ne reproduit que les indices manquants
+    (agent.indices_a_produire), les propositions deja abouties sont intactes.
+    """
+    with Session() as s:
+        job = s.get(Job, job_id)
+        if job is None:
+            raise HTTPException(404, "Job introuvable.")
+        refus = refus_de_completion(job)
+        if refus:
+            raise HTTPException(409, refus)
+        if agent_actif(s) is None:
+            raise HTTPException(
+                503, "Aucun agent de génération actif. Lance `python agent.py` sur la "
+                     "machine où sont installés Blender et LM Studio.")
+
+        job.status = "en_attente"
+        job.etape = None
+        job.claimed_at = None
         s.commit()
         return _job_json(job)
 

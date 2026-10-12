@@ -196,14 +196,47 @@ def _etat(session, job, etape, fait=None, total=None):
     session.commit()
 
 
+def indices_a_produire(variantes, n_variantes):
+    """Indices des propositions qu'il reste a produire pour ce job.
+
+    Une proposition est acquise des qu'elle a un design_json ; les autres sont a
+    refaire. Rend produire_variantes REPRENABLE, ce qui sert deux fois :
+
+    - l'utilisateur demande des propositions supplementaires pour remplacer celles qui
+      n'ont pas abouti (route /completer) — refaire les reussies serait les re-rendre
+      pour rien, et plusieurs minutes de Blender a la poubelle ;
+    - un job remis en file conserve ce qu'il avait deja obtenu.
+
+    Les propositions ratees gardent leur indice : il est reutilise, donc aucune
+    violation de UNIQUE(job_id, indice) tant que la ligne est effacee avant.
+    """
+    acquises = {v.indice for v in variantes if v.design_json is not None}
+    return [i for i in range(1, n_variantes + 1) if i not in acquises]
+
+
 def produire_variantes(session, job):
-    """Phase 1 : N variantes, puis UN seul processus Blender pour les rendre toutes."""
+    """Phase 1 : les propositions manquantes, puis UN seul Blender pour les rendre."""
     run_dir = os.path.join(OUTPUTS_DIR, f"job_{job.id}")
     os.makedirs(run_dir, exist_ok=True)
     dossiers = []
 
-    for i in range(1, job.n_variantes + 1):
-        _etat(session, job, "design", fait=i, total=job.n_variantes)
+    a_produire = indices_a_produire(job.variantes, job.n_variantes)
+    deja = job.n_variantes - len(a_produire)
+    if deja:
+        log(f"job {job.id} : {deja} proposition(s) deja acquise(s), "
+            f"{len(a_produire)} a produire")
+    # Les lignes des tentatives ratees sont effacees, leur indice etant reutilise.
+    for v in [v for v in job.variantes if v.indice in a_produire]:
+        session.delete(v)
+    session.commit()
+    # La session est construite avec expire_on_commit=False : sans ce rafraichissement,
+    # job.variantes continue de referencer les lignes supprimees, et la premiere
+    # ecriture sur le job leve "Instance has been deleted". Mesure en conditions
+    # reelles : le job echouait des la premiere mise a jour d'avancement.
+    session.refresh(job)
+
+    for rang, i in enumerate(a_produire, start=1):
+        _etat(session, job, "design", fait=deja + rang, total=job.n_variantes)
         iter_dir = os.path.join(run_dir, f"variante_{i:02d}")
         os.makedirs(iter_dir, exist_ok=True)
         log_path = os.path.join(iter_dir, "log.txt")
@@ -244,8 +277,24 @@ def produire_variantes(session, job):
         session.commit()
         dossiers.append(iter_dir)
 
-    if not dossiers:
+    # Echec seulement si RIEN n'a abouti, tentatives precedentes comprises : sur une
+    # demande de propositions supplementaires, les anciennes restent valables meme si
+    # les nouvelles echouent toutes.
+    acquises = session.scalars(
+        select(Variante).where(Variante.job_id == job.id,
+                               Variante.design_json.is_not(None))).all()
+    if not acquises:
         raise RuntimeError("aucune variante n'a abouti")
+
+    if not dossiers:
+        # Rien de neuf a rendre, mais des propositions valables existent : on rend la
+        # main a l'utilisateur plutot que de faire echouer son job.
+        log(f"job {job.id} : aucune nouvelle proposition, {len(acquises)} conservee(s)")
+        job.status = "a_choisir"
+        job.etape = job.etape_fait = job.etape_total = None
+        session.add(job)
+        session.commit()
+        return
 
     _etat(session, job, "rendu des variantes", fait=0, total=len(dossiers))
     pipeline.render_all(

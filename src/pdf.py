@@ -195,15 +195,36 @@ def html_vers_pdf(html_path, pdf_path, timeout=180):
 
     # --user-data-dir dans un dossier jetable : sans lui, une instance Edge deja
     # ouverte capte la commande et le mode headless ne produit rien.
+    #
+    # --disable-dev-shm-usage : dans un conteneur, /dev/shm vaut 64 Mo par defaut, et
+    # Chromium s'y effondre en silence sur une page lourde. Mesure : une notice de 49
+    # etapes passait, une de 111 etapes ne produisait plus rien du tout. L'option le
+    # fait ecrire dans /tmp. Sans effet hors conteneur, d'ou son application partout
+    # plutot qu'une detection fragile.
     with tempfile.TemporaryDirectory(prefix="llmtol_pdf_") as profil:
-        subprocess.run(
-            [navigateur, "--headless=new", "--disable-gpu", f"--user-data-dir={profil}",
-             "--no-pdf-header-footer", f"--print-to-pdf={os.path.abspath(pdf_path)}",
-             "file:///" + os.path.abspath(html_path).replace(os.sep, "/")],
-            capture_output=True, timeout=timeout, check=False)
+        try:
+            sortie = subprocess.run(
+                [navigateur, "--headless=new", "--disable-gpu",
+                 "--disable-dev-shm-usage", f"--user-data-dir={profil}",
+                 "--no-pdf-header-footer", f"--print-to-pdf={os.path.abspath(pdf_path)}",
+                 "file:///" + os.path.abspath(html_path).replace(os.sep, "/")],
+                capture_output=True, timeout=timeout, check=False)
+        except subprocess.TimeoutExpired as e:
+            # Sans ce rattrapage, l'exception echappe au `except (RuntimeError, OSError)`
+            # de l'appelant et fait echouer tout le job pour un PDF manquant, alors que
+            # le modele, lui, est bon.
+            raise RuntimeError(
+                f"Le navigateur n'a pas fini en {timeout}s ({navigateur}). "
+                "Notice trop lourde ?") from e
 
     if not os.path.isfile(pdf_path) or os.path.getsize(pdf_path) == 0:
-        raise RuntimeError(f"Le navigateur n'a produit aucun PDF ({navigateur})")
+        # La sortie du navigateur etait capturee puis jetee : l'erreur disait seulement
+        # "aucun PDF", sans jamais dire pourquoi. Elle est maintenant rapportee.
+        details = (sortie.stderr or sortie.stdout or b"").decode("utf-8", "replace")
+        details = " / ".join(details.split()[-40:]) if details.strip() else "aucun message"
+        raise RuntimeError(
+            f"Le navigateur n'a produit aucun PDF ({navigateur}, code "
+            f"{sortie.returncode}) : {details[:400]}")
     return pdf_path
 
 
