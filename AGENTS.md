@@ -20,10 +20,10 @@ Prompt utilisateur
   -> Blender (add-on ImportLDraw)           -> 4 rendus orthographiques
   -> assemblage                             -> final.png
 
-Une chaîne antérieure demandait directement au LLM une liste de cubes. Elle a été retirée :
-pas de vraies pièces, aucune garantie géométrique, et 15 générations de créatures sur 15
-produisaient des membres détachés. Ses mesures de référence restent figées dans
-eval/results/ mais ne sont plus regénérables.
+Les CHIFFRES de toutes les mesures du projet sont dans docs/mesures.md, pas ici : ce
+fichier est chargé à chaque session, et on consulte un tableau de mesures une fois par
+mois. Ici ne restent que les règles et les pièges — ce qu'on peut enfreindre sans le
+savoir.
 
 Architecture réelle
 
@@ -38,12 +38,11 @@ pipeline.py
   generer_modele / preparer_notice / render_all, réutilisés par lego.py et agent.py :
   un seul chemin de génération dans le projet.
 agent.py
-  Prend les jobs déposés en base par l'API web et les traite sur l'hôte (Blender et
-  LM Studio y sont). Reprend un job abandonné après une coupure mémoire.
-  Sert aussi de chemin de RÉGÉNÉRATION : l'API remet un job terminé en `en_finition`
-  et toute la chaîne en aval du design est rejouée, sans aucun appel LLM. L'agent
-  reconstruit ce qui manque sur disque (chemins_manquants) plutôt que de refuser de
-  partir d'un dossier incomplet.
+  Prend les jobs déposés en base par l'API web et les traite (Blender et LM Studio).
+  Tourne sur l'hôte, ou dans le conteneur de génération (profil "conteneur").
+  Reprend un job abandonné après une coupure mémoire. Sert aussi de chemin de
+  RÉGÉNÉRATION : l'API remet un job terminé en `en_finition` et toute la chaîne en aval
+  du design est rejouée, sans aucun appel LLM.
 
 Génération (appels LLM) :
 
@@ -68,6 +67,13 @@ src/validator.py     contrôles géométriques -> report.json
 src/primitives.py    formes de référence analytiques + métrique IoU
 src/blender_script.py  model.ldr -> 4 rendus (s'exécute DANS Blender)
 src/img_output.py    4 rendus -> planche final.png
+
+Pile web :
+
+server/app.py        API FastAPI + service de l'interface. NE GÉNÈRE RIEN.
+server/regles.py     règles métier, sans FastAPI ni base (donc testables sur l'hôte)
+server/db.py         modèles SQLAlchemy, PARTAGÉS entre l'API et l'agent
+server/static/       interface Vue 3 chargée par CDN, sans chaîne de build
 
 Outils :
 
@@ -111,6 +117,10 @@ Le schéma JSON est le principal outil d'alignement : bien borné, il rend le mo
 INCAPABLE d'émettre une coordonnée aberrante ou une couleur hors palette. Ne pas le
 relâcher sans mesurer l'effet avec le harnais.
 
+La taille demandée (--taille / bbox_max) est une GARANTIE par le schéma, pas une
+consigne : build_schema() resserre bbox ET coordonnées. Mais c'est un PLAFOND, pas une
+cible, et choisir `grande` n'a aucun effet observable. Chiffres : docs/mesures.md.
+
 Règles de validation (src/validator.py)
 
 Bloquant :
@@ -122,242 +132,118 @@ Avertissement, pénalisé au score :
   pièce flottante, dépassement du bbox déclaré, symétrie annoncée non vérifiée,
   taux de remplissage > 85 %, centre de masse non soutenu, joints alignés
 
-Écart assumé avec la version précédente de ce document : "pièce flottante" n'est PAS
-bloquant. Le contrôle se déclenche sur des constructions parfaitement normales (les
-plaques centrales d'un toit plat au-dessus d'une pièce creuse) ; utilisé comme barrière,
-il faisait échouer quasiment toute génération.
+"Pièce flottante" n'est PAS bloquant. Le contrôle se déclenche sur des constructions
+parfaitement normales (les plaques centrales d'un toit plat au-dessus d'une pièce
+creuse) ; utilisé comme barrière, il faisait échouer quasiment toute génération.
 
-Schema de la base : db/init.sql n'est joue qu'a la CREATION du volume Postgres. Un
-ajout de colonne sur une base en service passe donc par server.db.assurer_schema(),
-idempotent, appele au demarrage de l'API et de l'agent. Pas d'Alembic : une colonne ne
-justifie pas un outil de migration et son etat a garder coherent entre le conteneur et
-l'hote. jobs.origine_id relie les essais successifs d'un meme prompt et pointe TOUJOURS
-la racine, jamais l'essai precedent.
+Pièges à connaître
 
-Correspondance BrickLink : VERIFIEE une par une le 2026-10-12 sur bricklink.com, figee
-dans src/catalog.BRICKLINK_PARTS et BRICKLINK_COLORS. 3 pieces sur 24 portent un numero
-different des deux cotes (3023b/3023, 3070b/3070, 3069b/3069) : ne JAMAIS deduire le
-numero de boutique du numero LDraw. Les couleurs sont pires, les deux systemes utilisent
-les memes nombres pour des couleurs differentes (LDraw 8 = Dark_Grey, BrickLink 8 =
-Brown). Il n'existe aucun fichier de correspondance officiel entre les deux.
-verify_bricklink() echoue si une piece du catalogue n'a pas de correspondance explicite :
-elargir le catalogue oblige donc a traiter la question.
-
-verify_catalog() ne testait que la PRESENCE du fichier .dat, et laissait donc passer
-3023 apres que la mise a jour LDraw 2024-07 a renomme la piece en 3023b (3023.dat n'est
-plus qu'un stub "0 ~Moved to 3023b"). Il rejette desormais ces stubs. Le catalogue
-utilise 3023b.
-
-Format de la wanted list BrickLink : verifie sur help.asp?helpID=207. Le fichier ne doit
-PAS porter de declaration <?xml ?>, et seuls ITEMTYPE et ITEMID sont obligatoires.
-
-Licence de la bibliotheque LDraw : CC BY 2.0 et CC BY 4.0 (CAlicense.txt, CAlicense4.txt
-et CAreadme.txt, livres avec la bibliotheque ; chaque .dat du catalogue porte sa ligne
-"0 !LICENSE"). La redistribution est donc autorisee avec attribution, y compris dans une
-image Docker.
-
-Pentes au catalogue (3040b, 3039) : la regle "ne pas elargir le catalogue avant que la
-geometrie ne soit fiable" est LEVEE, la condition etant remplie (0/26 hors sol, IoU
-0.774, aucune collision). Une pente NE REMPLIT PAS sa boite englobante : w et d
-decrivent sa seule EMPREINTE HAUTE, la rampe deborde d'une rangee qui doit etre vide,
-dans la grille, et non deja reservee (deux pentes face a face se percuteraient dans le
-creux sans que le validateur le voie — il ne connait que l'empreinte haute).
-
-Geometrie VERIFIEE sur les sommets de 3040b.dat : X -10..10 (1 tenon), Z -30..10 (2
-tenons). L'extension en Z n'est PAS centree sur l'origine, la piece est centree sur son
-tenon HAUT. Avec w/d = empreinte haute, la formule de centrage de ldraw_writer
-s'applique sans changement ; avec l'emprise totale elle decalerait tout d'un demi-tenon.
-
-Quatre orientations (champ `retournee` en plus de `rotated`), sens de descente RELEVE SUR
-UN RENDU et non calcule : identite -> -y, 90 -> -x, 180 -> +y, 270 -> +x.
-
-MESURE de l'elargissement, sur les 161 designs archives (l'IoU ne peut pas bouger : il se
-calcule sur les voxels, que le pavage ne touche pas) :
-  pieces 96.87 -> 98.89 (+2.1%)   joints 0.2574 -> 0.2578   score 84.26 -> 84.22
-  648 pentes sur 79 designs       161/161 paves sans incident, 2 erreurs bloquantes
-  (les memes qu'avant)
-Verification visuelle : pyramide rendue avant/apres, gradins devenus rampes, orientations
-correctes sur les quatre faces. LeoCAD n'est pas installe, le controle est passe par un
-rendu Blender.
-
-Generation en conteneur (Dockerfile.agent, profil compose "conteneur") : image de 1.07 Go
-embarquant Blender 5.1.1, ImportLDraw 1.2.3 et la bibliotheque LDraw, versions figees.
-LM Studio RESTE SUR L'HOTE, joint par host.docker.internal. Le mode hote est intact :
-sans le profil, rien ne change. Le profil evite que deux agents demarrent ensemble et se
-disputent LM Studio.
-
-Mesure : rendu d'un meme modele 65 s sur l'hote, 36 s en conteneur (le conteneur est donc
-PLUS RAPIDE, a l'inverse de ce qui etait attendu), images equivalentes (682762 vs 682703
-octets).
-
-Deux pieges, verifies empiriquement :
-  - Blender 5.1 ne charge PAS les add-ons herites depuis son dossier d'installation. Pose
-    sous /opt/blender/5.1/scripts/addons, l'add-on figure pourtant dans
-    bpy.utils.script_paths(subdir='addons') et addon_enable repond quand meme "No module
-    named". Il faut bpy.utils.user_resource('SCRIPTS').
-  - l'add-on cherchait la bibliotheque dans ses PREFERENCES ENREGISTREES : correct sur un
-    poste configure a la main, "Could not find LDraw Part Library" partout ailleurs. Le
-    chemin resolu par src.catalog est desormais transmis a Blender par LEGO_LDRAW_DIR et
-    passe explicitement en ldrawPath. Vaut aussi pour l'hote avec un profil Blender neuf.
-
-config.py lit toutes ses valeurs dans l'environnement, les valeurs ecrites restant les
-defauts de l'hote Windows (LEGO_BLENDER_EXE, LM_STUDIO_URL, LM_STUDIO_MODEL,
-LEGO_NAVIGATEUR_PDF). src.catalog cherche la bibliotheque dans $LEGO_LDRAW_DIR d'abord.
-Ne JAMAIS faire d'un chemin de conteneur un defaut : ca marcherait en conteneur et
-casserait le poste de l'utilisateur.
-
-Avancement affiche a l'utilisateur : l'agent ecrit son etape en texte libre dans
-jobs.etape ; la traduction en identifiants stables se fait cote serveur, dans
-server/regles.PHASES_PAR_ETAPE, et l'interface n'interprete rien. Ajouter une etape sans
-la declarer la ferait retomber dans l'inconnu : un test relit les chaines ecrites dans
-agent.py et server/app.py et exige qu'elles soient toutes connues.
-
-L'interface n'a qu'UN panneau, qui suit ce sur quoi on a clique, sinon ce qui travaille.
-L'ordre precedent (ce qui attend un choix d'abord) avait un defaut vicieux : une demande
-en attente de choix masquait en permanence celle que l'agent traitait.
-
-agent.indices_a_produire rend produire_variantes REPRENABLE : seules les propositions
-sans design_json sont rejouees, en reutilisant leur indice (leur ligne est effacee
-avant, sinon UNIQUE(job_id, indice) sauterait). Apres cette suppression il FAUT
-session.refresh(job) : la session a expire_on_commit=False, donc job.variantes garderait
-les lignes supprimees et la premiere ecriture leverait "Instance has been deleted".
-
-PDF en conteneur : Chromium REFUSE de demarrer en root sans --no-sandbox ("Running as
-root without --no-sandbox is not supported"), et l'image tourne en root. L'option n'est
-ajoutee QUE dans ce cas : la desactiver sur un poste de travail affaiblirait reellement
-le navigateur pour un gain nul. --disable-dev-shm-usage est ajoute en precaution (64 Mo
-de /dev/shm par defaut dans un conteneur), pas comme correctif — la premiere hypothese
-designait /dev/shm, et elle etait fausse.
-Au passage, subprocess.TimeoutExpired n'est ni RuntimeError ni OSError : sans
-rattrapage elle echappait au except de agent.finir et faisait echouer tout le job pour
-un PDF manquant. Et la sortie du navigateur etait capturee puis jetee, d'ou une erreur
-"aucun PDF" qui ne disait jamais pourquoi.
-
-Problèmes connus à surveiller
-
-LM Studio réinjecte silencieusement le system prompt et le Structured Output configurés
+LM STUDIO réinjecte silencieusement le system prompt et le Structured Output configurés
 sur le modèle dans son interface, dès qu'une requête n'envoie pas son propre
 response_format. Le réglage REVIENT à chaque rechargement du modèle. Symptôme : le modèle
 répond la même structure JSON quel que soit le prompt, même sans rapport. Ce piège a coûté
 du temps trois fois. Vérifier avant tout run long.
+  Détail : le modèle qwen3-coder-30b garde un Structured Output hérité de la chaîne v0
+  (llm.prediction.structured + llm.prediction.systemPrompt dans
+  .lmstudio/.internal/user-concrete-model-default-config/qwen/qwen3-coder-30b.json). Ni
+  un system prompt à nous ni un response_format {"type":"text"} ne le neutralisent —
+  seul un json_schema explicite le fait. Le designer est donc immunisé, le planificateur
+  NON. Se vide dans My Models > le modèle > vider System Prompt et Structured Output.
+  Tant que ce n'est pas fait, eval/run_eval.py est inutilisable.
 
-Décalage d'indice z : RÉSOLU, mais pas là où on le croyait. Le défaut venait du
-PLANIFICATEUR, pas du designer. Son plan écrivait "z=1..8" et le designer obéissait au
-plan qu'on lui donne. Corriger prompts/designer_system.txt n'a rien changé (mesuré :
-8/26 avant, 9/26 après). La consigne a été déplacée dans prompts/planner_system.txt :
-"Z IS 0-INDEXED AND z=0 IS THE GROUND", plus un z=0 figé dans le gabarit de sortie.
+LE DÉFAUT VIENT SOUVENT DU PLANIFICATEUR, pas du designer. Deux fois sur deux : le
+décalage z (son plan écrivait "z=1..8") et la confusion plate/brique de prim_escalier.
+Le designer obéit fidèlement au plan qu'on lui donne. Corriger designer_system.txt n'a
+rien changé dans les deux cas. Chiffres : docs/mesures.md.
 
-Mesuré sur le jeu complet (9 formes, 3 tentatives) : 9/26 hors sol -> 0/26. Les trois
-formes concernées passent de 0.819 a 1.000 d'IoU.
+NE JAMAIS COURT-CIRCUITER UNE ÉTAPE DE LA CHAÎNE pour mesurer l'effet d'un changement
+sur cette chaîne. Une "mesure" du correctif z contournait le planificateur avec un plan
+écrit à la main contenant "poser au sol (z=0)" : elle mesurait cette phrase.
 
-Le décalage n'était PAS cosmétique : en démarrant à z=1 dans un bbox de hauteur n, le
-modèle se faisait tronquer d'une plate par le haut contre son propre bbox. Les IoU
-observés valaient exactement (n-1)/n — 7/8=0.875 pour le cube, 5/6=0.833 pour le pavé,
-3/4=0.750 pour le cylindre. Une couche entière perdue à chaque fois.
+prim_escalier est DIAGNOSTIQUÉ : la forme est exacte, le score vient d'une confusion
+plate/brique et d'une rotation que la métrique ne tolère pas. DEUX correctifs de prompt
+ont été essayés et mesurés, sans effet : NE PAS LES RETENTER. Voir docs/mesures.md.
 
-Leçon de méthode : la première "mesure" de cette correction était fausse parce qu'elle
-contournait le planificateur avec un plan écrit à la main contenant "poser au sol
-(z=0)". Elle mesurait cette phrase, pas la correction. Ne jamais court-circuiter une
-étape de la chaîne pour mesurer l'effet d'un changement sur cette chaîne.
-
-LM Studio garde un Structured Output collé au modèle qwen3-coder-30b, hérité de la
-chaîne v0 supprimée (llm.prediction.structured + llm.prediction.systemPrompt dans
-.lmstudio/.internal/user-concrete-model-default-config/qwen/qwen3-coder-30b.json). Il
-force la réponse au schéma action/cube/rectangle. Vérifié : ni un system prompt à nous,
-ni un response_format {"type":"text"} ne le neutralisent — seul un json_schema explicite
-le fait. Le designer est donc immunisé, le planificateur NON : il répond
-[{"action":"create","object":"cube"}] à n'importe quoi. Se vide dans l'interface LM
-Studio (My Models > le modèle > vider System Prompt et Structured Output). Tant que ce
-n'est pas fait, eval/run_eval.py est inutilisable (il passe par le planificateur).
-
-Le modèle ne sait pas rastériser un cercle. D'où les opérations cylinder/sphere, qui
-déplacent le rastérisage vers Python (src/primitives.py). MESURE FIGÉE COMPLÈTE, 9
-formes x 3 tentatives via le vrai planificateur. Référence avant cylinder/sphere :
-v1prim_20260923_093512 ; après : v1prim_20261010_185403 ; après correction du z :
-v1primz_* + v1primB_* + v1primC_*.
-
-  cylinder/sphere seuls   IoU global 0.614 -> 0.706   courbes 0.391 -> 0.619
-  puis correction du z    IoU global 0.706 -> 0.774   courbes 0.619 -> 0.698
-                          box 0.769 -> 0.830          durée 78s -> 52s
-                          hors sol 9/26 -> 0/26
-
-  cube     0.875 -> 1.000     pave     0.833 -> 1.000     cylindre 0.750 -> 1.000
-  anneau   0.838 -> 0.947     croix/tour 1.000 (inchangé) pyramide 0.330 -> 0.384
-  escalier 0.139 -> 0.149 (pire cas du jeu)              sphere   0.527 -> 0.342
-
-Opérations réellement employées : box, cylinder, layer, carve, mirror. cylinder est
-adopté, sphere NON.
-
-Le recul de prim_sphere n'est PAS une régression : sur 3 tentatives, une échoue (déjà
-avant), une reproduit exactement l'ancien résultat (0.527 avec layer) et une bascule sur
-box+carve et tombe à 0.157. La moyenne repose sur deux générations exploitables, dont
-une qui joue à pile ou face sur la méthode. Chiffre non solide statistiquement.
-
-Conséquence sur la métrique : un IoU de 1.0 sur prim_cylindre mesure désormais que le
-modèle a choisi la bonne opération et les bons paramètres, plus qu'il a su tracer un
-cercle. Ce n'est pas la même chose, et c'est voulu.
-
-prim_escalier (0.149, pire cas du jeu) : DIAGNOSTIQUE. Le modele construit un escalier
-GEOMETRIQUEMENT PARFAIT. Deux causes distinctes expliquent le score, et une seule est de
-sa faute.
-
-1. ERREUR DU MODELE — 3 plates par marche au lieu d'une. Il raisonne en briques
-   (1 brique = 3 plates), alors que le prompt dit explicitement "la premiere marche fait
-   1 plate de haut". Volume produit : 180 voxels contre 60 attendus, exactement 3x.
-   C'est ENCORE le planificateur, pas le designer : les plans ecrivent z=0..2, z=3..5,
-   ... et une boite de 15 plates ; le designer obeit fidelement. Meme schema que le
-   decalage z.
-
-2. ARTEFACT DE MESURE — l'escalier est tourne de 270 degres par rapport a la reference.
-   Le prompt n'impose AUCUNE orientation. voxel_iou recadre sur le contenu mais ne
-   tourne pas : il punissait une reponse correcte.
-
-Decomposition mesuree, tentative 1 :
-  tel quel                              0.200
-  rotation autorisee                    0.333
-  hauteur corrigee                      0.429
-  hauteur corrigee + rotation autorisee 1.000   <- la forme etait exacte
-
-D'ou src/primitives.voxel_iou_oriente() : meilleur IoU parmi les 8 orientations du plan
-horizontal (le haut et le bas restent fixes, un modele a l'envers ne tiendrait pas
-debout). Rapportee EN PLUS de voxel_iou, colonne iou_oriente du CSV — jamais a sa place,
-remplacer la metrique principale casserait la comparabilite de tout l'historique.
-
-DEUX CORRECTIONS DE PROMPT ONT ETE ESSAYEES ET MESUREES. Les deux sont SANS EFFET, ne
-pas les retenter :
-  a) consigne explicite "quand la description donne une hauteur en plates, utilise
-     exactement ce nombre, ne l'arrondis pas en briques" -> 0.200 (bruit). Verifie que
-     la consigne partait bien dans la requete : elle y etait, le modele l'a ignoree 3
-     fois sur 3.
-  b) reformulation faisant de la plate l'unite par defaut et de la brique une
-     information secondaire -> 0.198. Plan produit mot pour mot identique.
-Le prompt a ete restaure a l'identique : une ligne qui ne fait rien coute des tokens et
-laisse croire que le cas est traite. Temoin prim_tour : 1.000 dans les deux essais, donc
-ces formulations ne degradaient rien ailleurs non plus.
-
-Ce qui reste a tenter, si on y revient : agir cote jeu de test (le prompt figé dit
-"1 plate", le modele comprend "1 niveau") ou accepter que ce cas mesure la capacite du
-modele a respecter une unite, ce qu'il ne fait pas ici.
-
-La sphère est ronde dans la grille mais APLATIE à l'écran (~2.5x) : `diameter` vaut
+LA SPHÈRE est ronde dans la grille mais APLATIE à l'écran (~2.5x) : `diameter` vaut
 autant de tenons en X/Y que de plates en Z, or un tenon fait 20 LDU et une plate 8.
 src/primitives.py assume ce choix et les références d'IoU l'utilisent ; changer l'un
 sans l'autre rendrait la métrique fausse.
 
-La taille demandee (--taille / bbox_max) est une garantie par le schema, pas une
-consigne : build_schema() resserre bbox ET coordonnees. Mesure, 3 generations par
-taille : 0 depassement sur 9. MAIS la borne est un PLAFOND, pas une cible — `petite`
-sature sa borne (16x16x20 aux 3 essais), `grande` ne la touche jamais (16x16x24,
-24x24x24, 16x16x12) parce que le planificateur choisit ce qu'il juge raisonnable.
-Choisir `grande` n'a donc aucun effet observable aujourd'hui. Et le nombre de pieces
-ne suit pas la taille (petite 50-143, moyenne 65-241, grande 137-189) : il depend du
-creux du modele. La garantie porte sur la boite englobante, pas sur le compte.
+UNE PENTE NE REMPLIT PAS SA BOÎTE ENGLOBANTE. w et d décrivent sa seule EMPREINTE
+HAUTE ; la rampe déborde d'une rangée qui doit être vide, dans la grille, et non déjà
+réservée (deux pentes face à face se percuteraient dans le creux sans que le validateur
+le voie — il ne connaît que l'empreinte haute). Géométrie vérifiée sur les sommets de
+3040b.dat : l'extension en Z n'est PAS centrée sur l'origine, la pièce est centrée sur
+son tenon HAUT. Avec w/d = empreinte haute la formule de centrage de ldraw_writer
+s'applique sans changement ; avec l'emprise totale elle décalerait tout d'un demi-tenon.
+Quatre orientations (champ `retournee` en plus de `rotated`), sens de descente RELEVÉ
+SUR UN RENDU : identité -> -y, 90 -> -x, 180 -> +y, 270 -> +x.
+
+verify_catalog() ne testait que la PRÉSENCE du fichier .dat, et laissait donc passer
+3023 après que la mise à jour LDraw 2024-07 a renommé la pièce en 3023b (3023.dat n'est
+plus qu'un stub "0 ~Moved to 3023b"). Il rejette désormais ces stubs. Même piège sur
+3040 -> 3040b.
+
+NE JAMAIS DÉDUIRE LE NUMÉRO BRICKLINK DU NUMÉRO LDRAW. 4 pièces sur 26 diffèrent, et les
+couleurs utilisent les mêmes nombres pour des couleurs différentes. Il n'existe aucun
+fichier de correspondance officiel. verify_bricklink() échoue si une pièce du catalogue
+n'a pas de correspondance explicite : élargir le catalogue oblige à traiter la question.
+Chiffres : docs/mesures.md.
+  Format de la wanted list : vérifié sur help.asp?helpID=207. Le fichier ne doit PAS
+  porter de déclaration <?xml ?>, et seuls ITEMTYPE et ITEMID sont obligatoires. La page
+  Want > Upload a DEUX options : le sélecteur de fichier n'accepte que .bsx .ldr .lxf
+  .io (donc model.ldr), le XML ne passe que par la zone de COLLAGE.
 
 EEVEE rend les pièces en aplat uniforme (groupes de nœuds de l'add-on écrits pour Blender
 2.81). Utiliser Cycles, ou Workbench pour itérer vite.
 
-Les runs longs en arrière-plan se font tuer par la pression mémoire (LM Studio retient
+BLENDER 5.1 ne charge PAS les add-ons hérités depuis son dossier d'installation. Posé
+sous /opt/blender/5.1/scripts/addons, l'add-on figure pourtant dans
+bpy.utils.script_paths(subdir='addons') et addon_enable répond quand même "No module
+named". Il faut bpy.utils.user_resource('SCRIPTS').
+
+L'ADD-ON CHERCHAIT LA BIBLIOTHÈQUE dans ses PRÉFÉRENCES ENREGISTRÉES : correct sur un
+poste configuré à la main, "Could not find LDraw Part Library" partout ailleurs. Le
+chemin résolu par src.catalog est transmis à Blender par LEGO_LDRAW_DIR et passé
+explicitement en ldrawPath. Vaut aussi pour l'hôte avec un profil Blender neuf.
+
+CHROMIUM REFUSE DE DÉMARRER EN ROOT sans --no-sandbox, et l'image de génération tourne
+en root. L'option n'est ajoutée QUE dans ce cas : la désactiver sur un poste de travail
+affaiblirait réellement le navigateur pour un gain nul. --disable-dev-shm-usage est là en
+précaution, pas comme correctif — la première hypothèse désignait /dev/shm, et elle était
+fausse. Au passage : subprocess.TimeoutExpired n'est ni RuntimeError ni OSError, sans
+rattrapage elle échappait au except de agent.finir et faisait échouer tout le job pour un
+PDF manquant. Et la sortie du navigateur était capturée puis JETÉE, d'où une erreur qui
+ne disait jamais pourquoi.
+
+LES RUNS LONGS EN ARRIÈRE-PLAN se font tuer par la pression mémoire (LM Studio retient
 ~18 Go). Lancer en processus détaché via Start-Process, et utiliser --resume.
+
+SCHÉMA DE LA BASE : db/init.sql n'est joué qu'à la CRÉATION du volume Postgres. Un ajout
+de colonne sur une base en service passe par server.db.assurer_schema(), idempotent,
+appelé au démarrage de l'API et de l'agent. Pas d'Alembic. jobs.origine_id relie les
+essais successifs d'un même prompt et pointe TOUJOURS la racine, jamais l'essai précédent.
+
+CONFIG PORTABLE : config.py lit toutes ses valeurs dans l'environnement, les valeurs
+écrites restant les défauts de l'hôte Windows (LEGO_BLENDER_EXE, LM_STUDIO_URL,
+LM_STUDIO_MODEL, LEGO_NAVIGATEUR_PDF). src.catalog cherche la bibliothèque dans
+$LEGO_LDRAW_DIR d'abord. Ne JAMAIS faire d'un chemin de conteneur un défaut : ça
+marcherait en conteneur et casserait le poste de l'utilisateur.
+
+AVANCEMENT AFFICHÉ : l'agent écrit son étape en texte libre dans jobs.etape ; la
+traduction en identifiants stables se fait côté serveur (server/regles.PHASES_PAR_ETAPE),
+et l'interface n'interprète rien. Un test relit les chaînes écrites dans agent.py et
+server/app.py et exige qu'elles soient toutes connues.
+
+L'INTERFACE N'A QU'UN PANNEAU, qui suit ce sur quoi on a cliqué, sinon ce qui travaille.
+L'ordre précédent (ce qui attend un choix d'abord) avait un défaut vicieux : une demande
+en attente de choix masquait en permanence celle que l'agent traitait.
+
+agent.indices_a_produire rend produire_variantes REPRENABLE : seules les propositions
+sans design_json sont rejouées, en réutilisant leur indice (leur ligne est effacée avant,
+sinon UNIQUE(job_id, indice) sauterait). Après cette suppression il FAUT
+session.refresh(job) : la session a expire_on_commit=False, donc job.variantes garderait
+les lignes supprimées et la première écriture lèverait "Instance has been deleted".
 
 Codex doit toujours chercher à corriger la cause racine, pas seulement masquer l'erreur.
 
@@ -384,10 +270,8 @@ simuler ou mocker un résultat pour faire passer un test — si une étape ne pe
   testée, le dire ;
 élargir le DSL au-delà des huit opérations actuelles sans une mesure qui montre
   laquelle manque ;
-élargir le catalogue sans vérifier chaque pièce contre la bibliothèque LDraw,
-  sans relever ses dimensions empiriquement, et sans mesurer l'effet sur les
-  designs archivés (la règle précédente — ne pas élargir avant que la géométrie
-  soit fiable — est levée, la condition étant remplie et mesurée) ;
+élargir le catalogue sans vérifier chaque pièce contre la bibliothèque LDraw, sans
+  relever ses dimensions empiriquement, et sans mesurer l'effet sur les designs archivés ;
 corriger un mauvais alignement en allongeant le system prompt sans mesurer d'abord ;
 supprimer un fichier sans validation ;
 ignorer les erreurs silencieusement ;
@@ -409,18 +293,12 @@ Priorité 1 :
   exactement et gratuitement.
 
 Priorité 2 :
-  sphere n'est pas adopté, le modèle garde layer (IoU 0.527). Cause identifiée : le
-  prompt figé du jeu de test dicte la méthode — "chaque couche horizontale est un
-  disque, le plus large au milieu, rétrécissant vers le haut et vers le bas". Le modèle
-  obéit au prompt. Celui du cylindre ne prescrit rien, d'où l'adoption immédiate
-  (0.272 -> 0.750). Ajouter un exemple few-shot avec sphere a été essayé et MESURÉ :
-  sans effet sur l'adoption, IoU dégradé (0.526 -> 0.258), exemple retiré.
-  Décision à prendre : reformuler ce prompt du jeu figé (ce qui casse la comparabilité
-  de tout l'historique) ou accepter que ce cas mesure l'obéissance au prompt.
-
-  prim_escalier : diagnostiqué (voir plus haut). La forme est exacte ; le score
-  vient d'une confusion plate/brique du planificateur et d'une rotation que la
-  métrique ne tolère pas. Deux correctifs de prompt essayés, mesurés, sans effet.
+  sphere n'est pas adopté, le modèle garde layer. Cause identifiée : le prompt figé du
+  jeu de test dicte la méthode ("chaque couche horizontale est un disque..."). Celui du
+  cylindre ne prescrit rien, d'où l'adoption immédiate. Ajouter un exemple few-shot avec
+  sphere a été essayé et MESURÉ : sans effet sur l'adoption, IoU dégradé, exemple retiré.
+  Décision à prendre : reformuler ce prompt du jeu figé (ce qui casse la comparabilité de
+  tout l'historique) ou accepter que ce cas mesure l'obéissance au prompt.
 
 Priorité 3 :
   LPub3D n'a jamais été évalué avant d'écrire src/instructions.py (le plan le demandait).
@@ -437,6 +315,7 @@ outputs/
         design.json             programme DSL validé (étape B)
         report.json             rapport du validateur
         model.ldr               modèle en vraies pièces
+        wanted_list.xml         liste d'achat BrickLink
         planner_request.json    payload exact envoyé
         planner_raw.txt         réponse brute
         planner_meta.json       tokens, durée, température, seed, tentatives
@@ -446,14 +325,19 @@ outputs/
         log.txt                 journal de l'itération
         error.txt               uniquement en cas d'échec
 
-Deux exécutions successives ne s'écrasent jamais.
+Deux exécutions successives ne s'écrasent jamais. La pile web range ses sorties dans
+outputs/job_<uuid>/variante_NN/ selon la même convention.
 
 Environnement
 
-Windows. Blender installé localement, LM Studio en local.
-Chemins centralisés dans config.py. La bibliothèque LDraw est cherchée automatiquement
-(src/catalog.py), y compris un sous-dossier ldraw/ imbriqué et un Documents/ redirigé
-par OneDrive.
+Windows. Blender installé localement, LM Studio en local. Chemins centralisés dans
+config.py, tous surchargeables par l'environnement. La bibliothèque LDraw est cherchée
+automatiquement (src/catalog.py), y compris un sous-dossier ldraw/ imbriqué et un
+Documents/ redirigé par OneDrive.
+
+La génération peut aussi tourner en conteneur (Dockerfile.agent, profil compose
+"conteneur") : l'image embarque Blender, l'add-on et la bibliothèque LDraw à des versions
+figées. LM Studio reste sur l'hôte, joint par host.docker.internal.
 
 Prérequis vérifiables d'un coup : python tools/check_env.py
 
@@ -471,6 +355,9 @@ python -m tools.render_batch --glob "<motif>" --assemble
 python -m eval.run_eval --version v1 --n 3
 python -m eval.run_eval --version v1prim --n 3 --testset eval/primitives_testset.json
 python -m eval.run_eval --compare <csv_a> <csv_b>
+
+docker compose up -d                            base, API, interface
+docker compose --profile conteneur up -d        + la génération (Blender compris)
 
 Vérification syntaxe :
 Get-ChildItem -Recurse -Filter *.py | ForEach-Object { python -m py_compile $_.FullName }

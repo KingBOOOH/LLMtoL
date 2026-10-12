@@ -11,6 +11,10 @@ une à une — et ne lui laisse que celle où il est bon : imaginer la forme.
 
 ---
 
+Toutes les mesures du projet — IoU par forme, effet de chaque correction, temps de
+rendu, correspondances vérifiées — sont rassemblées dans **[docs/mesures.md](docs/mesures.md)**,
+avec leur protocole.
+
 ## Prérequis
 
 | Composant | Rôle | Obligatoire pour |
