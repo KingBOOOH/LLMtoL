@@ -998,10 +998,44 @@ Le détail par forme dit *pourquoi*, et c'est plus instructif que le chiffre glo
 | `prim_cylindre` | 0,674 | 2,2 | juge très trop dur |
 | `prim_sphere` | 0,365 | 0,4 | les deux disent « mauvais » |
 
-Le juge est **exact sur les formes rectilignes et s'effondre sur les formes courbes**,
-malgré une consigne explicite de ne pas pénaliser le crénelage des briques. Et il utilise
-8 valeurs de note distinctes sur 11 : l'échelle ne s'est pas effondrée, c'est un vrai
-désaccord, pas un juge qui met la même note partout.
+De loin, on lit « exact sur les formes rectilignes, s'effondre sur les courbes ». En
+regardant les rendus, c'est plus précis et moins flatteur : **le juge ne pèse pas la même
+chose selon la forme.**
+
+Les deux cas sont comparables à dessein. Dans ce jeu, X et Y se comptent en tenons (20
+LDU) et Z en plates (8 LDU) : une forme dont la hauteur est donnée en plates est donc
+**aplatie à l'écran**, et ni `prim_cube` ni `prim_cylindre` ne ressemblent à leur nom.
+
+| | demandé | à l'écran | rapport | IoU | note |
+|---|---|---|---|---|---|
+| `prim_cube` | 8 tenons de côté, 8 plates de haut | 160 × 64 LDU | 2,5:1 | 0,958 | **10,0** |
+| `prim_cylindre` | 9 tenons de diamètre, 4 plates de haut | 180 × 32 LDU | 5,6:1 | 0,674 | **2,2** |
+
+Les deux rendus respectent leur prompt **à la lettre**. Le juge en valide un et rejette
+l'autre, et ses justifications disent pourquoi :
+
+> `prim_cube`, 10/10 — « L'objet est un cube parfaitement reconnaissable, avec 8 tenons de
+> côté (X et Y) et 8 plates de haut (Z), comme demandé, et toutes les proportions et
+> l'agencement sont justes. »
+
+> `prim_cylindre`, 3/10 — « l'assemblage de plaques LEGO forme un bloc rectangulaire avec
+> des dents, pas un cylindre. »
+
+Sur la boîte il **vérifie les dimensions** du prompt et valide ; sur la courbe il **juge le
+nom** et refuse, en ignorant les 4 plates qu'il venait de lire. Les deux objets sont
+pourtant la même galette. Ce n'est donc pas le crénelage des briques qui le gêne — la
+consigne de ne pas le pénaliser est respectée sur le cube — c'est qu'il n'applique pas le
+même critère d'une forme à l'autre. Un juge incohérent est pire qu'un juge sévère : la
+sévérité se recalibre, l'incohérence non.
+
+Il utilise 8 valeurs de note distinctes sur 11 : l'échelle ne s'est pas effondrée, c'est un
+vrai désaccord, pas un juge qui met la même note partout.
+
+**Au passage, ceci est un résultat sur le jeu de test, pas sur le juge.** Les prompts sont
+littéralement exacts, mais `prim_cube` et `prim_cylindre` nomment des objets que leur
+propre spécification rend impossibles à l'écran. L'IoU ne peut pas le voir : sa référence
+est calculée dans les mêmes unités, donc elle donne ~1,0 à une galette appelée cube. Les
+deux métriques du projet sont d'accord sur ces cas — et toutes les deux à côté.
 
 Deux résultats secondaires valent d'être gardés :
 

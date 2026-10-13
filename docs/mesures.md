@@ -277,9 +277,35 @@ pas de colonne `note_vlm` dans le CSV d'évaluation.
 | `prim_sphere` | 7 | 0,365 | 0,365 | 0,4 |
 | `prim_tour` | 15 | 0,996 | 0,996 | 6,0 |
 
-Accord exact sur les trois formes rectilignes à IoU élevé, effondrement sur les formes
-courbes. 8 valeurs de note distinctes sur 11 : l'échelle ne s'est pas effondrée, c'est un
-désaccord réel.
+8 valeurs de note distinctes sur 11 : l'échelle ne s'est pas effondrée, c'est un désaccord
+réel. Mais la lecture « exact sur les rectilignes, effondré sur les courbes » ne résiste
+pas aux rendus.
+
+### L'aplatissement touche tout le jeu, pas seulement la sphère
+
+X et Y se comptent en tenons (20 LDU), Z en plates (8 LDU). Toute forme dont la hauteur
+est donnée en plates est donc écrasée à l'écran. Relevé sur les références du jeu :
+
+| forme | largeur | hauteur | rapport | IoU | note |
+|---|---|---|---|---|---|
+| `prim_cube` | 160 LDU | 64 LDU | 2,5:1 | 0,96 | **10,0** |
+| `prim_pave` | 240 LDU | 48 LDU | 5,0:1 | 0,89 | 10,0 |
+| `prim_tour` | 80 LDU | 120 LDU | 0,7:1 | 1,00 | 6,0 |
+| `prim_cylindre` | 180 LDU | 32 LDU | 5,6:1 | 0,67 | **2,2** |
+| `prim_sphere` | 140 LDU | 56 LDU | 2,5:1 | 0,37 | 0,4 |
+
+`prim_cube` et `prim_cylindre` sont la même galette, et les deux rendus respectent leur
+prompt à la lettre. Le juge valide l'un à 10/10 en **vérifiant les dimensions** du prompt
+(« 8 tenons de côté et 8 plates de haut, comme demandé, toutes les proportions sont
+justes ») et rejette l'autre à 3/10 en **jugeant le nom** (« un bloc rectangulaire avec des
+dents, pas un cylindre »), sans tenir compte des 4 plates qu'il venait de lire.
+
+Donc : pas un juge sévère sur les courbes, un juge qui **change de critère**. Et un juge
+incohérent est pire qu'un juge sévère — la sévérité se recalibre, l'incohérence non.
+
+C'est aussi un résultat sur le **jeu de test** : l'IoU ne peut pas voir l'aplatissement,
+sa référence étant calculée dans les mêmes unités. Un IoU de 1,0 ici veut dire « conforme
+à la spécification », jamais « ressemble à l'objet nommé ».
 
 Coût : **10,6 s par note**, 966 s pour les 91 — générateur déchargé. Recalculer les IoU
 sur des notes déjà produites coûte 0,3 s par note (`--resume`).
