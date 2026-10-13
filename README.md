@@ -1793,6 +1793,78 @@ se recalculent sans aucun appel LLM :
 python -m tools.recover_eval eval/results/_work/v1 v1_recovered
 ```
 
+### Le juge visuel : mesuré, et refusé
+
+Le trou de mesure du projet est connu : sur « un château avec quatre tours », aucun
+chiffre ne dit si le résultat ressemble à un château. L'idée était d'y mettre un **second
+modèle, de vision**, qui note le rendu de 0 à 10 — LM Studio sert plusieurs modèles à la
+fois, le champ `model` de la requête suffit à les distinguer.
+
+Avant de s'en servir, il faut savoir s'il vaut quelque chose. Le jeu primitives est le
+seul endroit du projet où on connaît la bonne réponse : l'IoU se calcule analytiquement
+contre une référence. On fait donc noter au juge **91 rendus dont on sait déjà ce qu'ils
+valent**, et on mesure l'accord par une corrélation de **rang** (Spearman) — on lui
+demande de classer les rendus dans le bon ordre, pas de prédire l'IoU.
+
+```powershell
+python -m tools.calibrer_juge --model qwen/qwen3-vl-4b
+```
+
+**Le résultat, publié tel quel.** Qwen3-VL-4B, 91 rendus, 0 échec, barème à plages :
+
+| corrélation de rang | vs `iou` | vs `iou_oriente` |
+|---|---|---|
+| tous les rendus | **+0,382** | **+0,412** |
+| sans `prim_sphere` | +0,310 | +0,333 |
+| sans `prim_escalier` | +0,502 | +0,502 |
+
+C'est **faible**, et la barrière était annoncée avant la mesure à 0,55. Le juge n'est donc
+pas devenu une métrique : il n'y a pas de colonne `note_vlm` dans le CSV d'évaluation.
+Un juge à 0,41 ne permet pas de dire si un changement améliore ou dégrade un résultat,
+ce qui était exactement sa raison d'être.
+
+Le détail par forme dit *pourquoi*, et c'est plus instructif que le chiffre global :
+
+| forme | IoU | note moyenne | |
+|---|---|---|---|
+| `prim_croix` | 1,000 | 10,0 | accord exact |
+| `prim_cube` | 0,958 | 10,0 | accord exact |
+| `prim_pave` | 0,889 | 10,0 | accord exact |
+| `prim_escalier` | 0,152 | 7,1 | **le juge a raison, l'IoU a tort** |
+| `prim_pyramide` | 0,360 | 8,1 | juge trop indulgent |
+| `prim_tour` | 0,996 | 6,0 | juge trop dur |
+| `prim_anneau` | 0,828 | 4,2 | juge trop dur |
+| `prim_cylindre` | 0,674 | 2,2 | juge très trop dur |
+| `prim_sphere` | 0,365 | 0,4 | les deux disent « mauvais » |
+
+Le juge est **exact sur les formes rectilignes et s'effondre sur les formes courbes**,
+malgré une consigne explicite de ne pas pénaliser le crénelage des briques. Et il utilise
+8 valeurs de note distinctes sur 11 : l'échelle ne s'est pas effondrée, c'est un vrai
+désaccord, pas un juge qui met la même note partout.
+
+Deux résultats secondaires valent d'être gardés :
+
+- **Il corrobore le diagnostic de `prim_escalier`.** L'IoU dit 0,152, le juge dit 7,1 et
+  écrit « l'escalier est reconnaissable avec 5 marches ». La forme *est* exacte — c'est
+  ce que ce README documente plus haut, atteint par un autre chemin.
+- **Corréler contre `voxel_iou` seul fait porter au juge un défaut de la vérité terrain.**
+  `voxel_iou` punit une rotation ; un modèle qui regarde une image n'a aucun moyen de
+  savoir quelle orientation était attendue, et le prompt du jeu de test ne la dit pas.
+  D'où les deux colonnes. L'écart n'est que de +0,03 : la rotation n'était qu'une moitié
+  du problème de `prim_escalier`, la confusion plate/brique déforme aussi l'axe Z.
+
+Le code reste en place, et **désactivé par défaut** : sans `LEGO_VLM_MODEL`,
+`juge_vlm.disponible()` est faux et aucune génération ne l'appelle. Il coûte **10,6 s par
+note** sur un VLM 4B local, soit 16 min pour les 91 rendus — à condition que le générateur
+30B ne soit pas chargé en même temps : en concurrence CPU avec Blender, la même note passe
+à 97 s. Relancer la calibration sur des notes déjà produites est en revanche gratuit
+(`--resume`, 0,3 s par note) : seules les notes coûtent, les deux IoU se recalculent.
+
+Ce qui reste à essayer, si le sujet revient : un modèle de vision plus gros, ou noter les
+4 vues au lieu de la seule vue isométrique. Ce qui ne doit **pas** être réessayé : un
+troisième barème. Deux l'ont déjà été, et au troisième on n'étalonne plus un juge, on
+optimise un prompt contre un jeu de test — on fabrique le signal qu'on prétend mesurer.
+
 ---
 
 ## Tests et qualité

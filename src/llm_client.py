@@ -14,7 +14,9 @@ src.designer, qui renvoie au modele le detail de l'erreur. Deux familles de pann
 deux mecanismes.
 """
 
+import base64
 import json
+import mimetypes
 import os
 import sys
 import time
@@ -29,9 +31,46 @@ class LLMCallError(Exception):
     """Echec de call_llm apres epuisement des tentatives (reseau/HTTP/transport)."""
 
 
+def _contenu_user(user, images):
+    """Contenu du message utilisateur : une chaine, ou une liste de parties si images.
+
+    Data-URI base64 plutot qu'une URL de fichier : le serveur est local mais n'a
+    aucune raison de savoir lire nos chemins, et ca marche identiquement depuis le
+    conteneur de generation, ou les chemins de l'hote ne veulent rien dire.
+    """
+    if not images:
+        return user
+
+    parties = [{"type": "text", "text": user}]
+    for chemin in images:
+        with open(chemin, "rb") as f:
+            donnees = base64.b64encode(f.read()).decode("ascii")
+        mime = mimetypes.guess_type(chemin)[0] or "image/png"
+        parties.append({"type": "image_url",
+                        "image_url": {"url": f"data:{mime};base64,{donnees}"}})
+    return parties
+
+
+def _payload_pour_trace(payload, user, images):
+    """Payload journalise, images remplacees par leur nom de fichier.
+
+    La trace exacte est un principe du projet, mais une data-URI base64 pese des
+    centaines de ko : la recopier rendrait <tag>_request.json illisible autant
+    qu'enorme, pour une information qu'on a deja a cote sous forme de .png.
+    """
+    if not images:
+        return payload
+
+    parties = [{"type": "text", "text": user}]
+    parties += [{"type": "image_url", "image_url": {"url": f"<image: {os.path.basename(c)}>"}}
+                for c in images]
+    return {**payload,
+            "messages": payload["messages"][:-1] + [{"role": "user", "content": parties}]}
+
+
 def call_llm(system, user, *, schema=None, temperature=0.2, top_p=None, max_tokens=16000,
              seed=None, log_dir, tag, raw_filename=None, retries=3, timeout=600,
-             extra_messages=None):
+             extra_messages=None, model=None, images=None):
     """Appelle LM Studio et journalise requete/reponse/metadonnees dans log_dir.
 
     Parametres :
@@ -54,6 +93,13 @@ def call_llm(system, user, *, schema=None, temperature=0.2, top_p=None, max_toke
         extra_messages: messages inseres entre le system prompt et le message
                         utilisateur final — utilise pour le few-shot multi-tours
                         (paires user/assistant) de src.designer.
+        model         : identifiant du modele a interroger. None = celui de la
+                        generation (config.LM_STUDIO_MODEL). LM Studio sert plusieurs
+                        modeles sur la meme URL, c'est ce champ qui les distingue.
+        images        : chemins d'images jointes au message utilisateur. Le contenu
+                        devient alors une liste de parties (format vision de l'API
+                        OpenAI, que LM Studio reprend). Reserve a un modele vision :
+                        un modele texte ignore les parties image sans rien dire.
 
     Ecrit dans log_dir : <tag>_request.json (payload exact envoye),
     <raw_filename> (corps brut de la reponse), <tag>_meta.json (tokens, duree,
@@ -69,10 +115,10 @@ def call_llm(system, user, *, schema=None, temperature=0.2, top_p=None, max_toke
     messages = [{"role": "system", "content": system}]
     if extra_messages:
         messages.extend(extra_messages)
-    messages.append({"role": "user", "content": user})
+    messages.append({"role": "user", "content": _contenu_user(user, images)})
 
     payload = {
-        "model": config.LM_STUDIO_MODEL,
+        "model": model or config.LM_STUDIO_MODEL,
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,
@@ -97,7 +143,7 @@ def call_llm(system, user, *, schema=None, temperature=0.2, top_p=None, max_toke
     # meme la trace exacte de ce qui a ete demande.
     request_path = os.path.join(log_dir, f"{tag}_request.json")
     with open(request_path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2)
+        json.dump(_payload_pour_trace(payload, user, images), f, indent=2)
 
     raw_path = os.path.join(log_dir, raw_filename or f"{tag}_raw.txt")
     meta_path = os.path.join(log_dir, f"{tag}_meta.json")
@@ -136,7 +182,7 @@ def call_llm(system, user, *, schema=None, temperature=0.2, top_p=None, max_toke
 
         metadata = {
             "tag": tag,
-            "model": config.LM_STUDIO_MODEL,
+            "model": payload["model"],
             "temperature": temperature,
             "top_p": top_p,
             "max_tokens": max_tokens,

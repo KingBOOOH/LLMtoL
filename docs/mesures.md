@@ -191,6 +191,131 @@ boucle de réparation, 3 variantes sur 4 abouties).
 
 ---
 
+## Choix du modèle vision du juge (US V2-01)
+
+Candidats retenus sur l'empreinte réelle, relevée par l'API Hugging Face sur le
+catalogue `lmstudio-community` — quantification Q4_K_M plus le projecteur vision F16,
+**qui est un fichier séparé** qu'on oublie dans les estimations :
+
+| modèle | poids | mmproj | total | tient dans 4 Go de VRAM |
+|---|---|---|---|---|
+| Qwen3-VL-2B-Instruct | 1,03 Go | 0,76 Go | **1,79 Go** | largement |
+| Qwen2.5-VL-3B-Instruct | 1,80 Go | **1,25 Go** | 3,05 Go | oui |
+| Qwen3-VL-4B-Instruct | 2,33 Go | 0,78 Go | **3,11 Go** | oui, serré |
+| gemma-3-4b-it | 2,32 Go | 0,79 Go | 3,11 Go | oui, serré |
+| Qwen3-VL-8B-Instruct | 4,68 Go | 1,08 Go | 5,76 Go | **non** |
+
+Gemma 3 4B et Qwen3-VL-4B ont la **même empreinte à 10 Mo près**. L'argument du
+« projecteur plus léger », qui vaut contre Qwen **2.5**-VL-3B (1,25 Go), ne sépare pas
+ces deux-là. Il ne faut pas s'en servir pour trancher.
+
+### Pré-filtre de discrimination
+
+Avant de dépenser du temps Blender, test sur les **9 rendus complets déjà présents dans
+`outputs/`** (château ×2, maison ×2, phare, tours ×4). Chaque rendu noté contre chacun
+des 4 sujets, soit 36 notes par modèle. Un juge utilisable note haut sur le vrai sujet
+et bas sur les autres.
+
+| | Qwen3-VL-4B | Qwen3-VL-2B |
+|---|---|---|
+| note moyenne sur le vrai sujet | 5,56/10 | 4,00/10 |
+| note moyenne sur un autre sujet | 2,70/10 | 2,00/10 |
+| **écart** | **+2,85** | +2,00 |
+| notes perdues | **0/36** | **4/36** |
+| temps par note | **9,0 s** | 9,3 s |
+
+**Le 2B n'est pas plus rapide** malgré deux fois moins de poids : l'inférence est
+dominée par l'encodage de l'image, pas par le décodeur. Son seul avantage supposé
+disparaît. Il perd en plus 11 % de ses notes en partant en répétition dégénérée (« le
+toit est en forme de carré », cinq fois d'affilée) jusqu'à dépasser `max_tokens`.
+
+Corrigé à la cause : `raison` est borné à 200 caractères **dans le schéma**, plutôt que
+d'augmenter le budget de tokens. Vérifié que LM Studio compile bien `maxLength` en
+grammaire — les deux appels qui échouaient passent, à exactement 200 caractères.
+
+Retenu : **Qwen3-VL-4B-Instruct en Q4_K_M**.
+
+Il *tient* en mémoire en même temps que le générateur de 18,6 Go — mais il ne faut pas le
+faire : les deux chargés, il reste 1,1 Go libre sur 31,7, et le tueur de tâches de Windows
+a coupé deux calibrations sur trois. Décharger le générateur (`lms unload --all`) laisse
+16 Go libres et la troisième est passée d'un bloc. Le juge tourne en passe séparée après
+les rendus, précisément pour n'avoir jamais besoin des deux à la fois.
+
+### Ce que ce chiffre ne mesure pas
+
+L'étiquette de chaque rendu vient du champ `name` de son `design.json` : c'est ce que le
+générateur **voulait** produire, pas ce qu'il a produit. Un modèle étiqueté « château »
+est en réalité une maison à toit plat, et le juge a répondu maison=10 / château=5 —
+**il a raison, l'étiquette a tort**. L'écart de +2,85 est donc un plancher, pas une
+estimation : une partie des « erreurs » comptées contre le juge sont des erreurs
+d'étiquette.
+
+## Calibration du juge visuel contre l'IoU (US V2-01)
+
+91 rendus du jeu primitives, notés par Qwen3-VL-4B, confrontés à l'IoU calculé
+analytiquement. Corrélation de **rang** (Spearman) : on demande au juge de classer les
+rendus dans le bon ordre, pas de prédire l'IoU.
+
+| corrélation de rang | vs `iou` | vs `iou_oriente` |
+|---|---|---|
+| tous les rendus (91) | **+0,382** | **+0,412** |
+| sans `prim_sphere` (84) | +0,310 | +0,333 |
+| sans `prim_escalier` (76) | +0,502 | +0,502 |
+
+**Barrière annoncée avant la mesure : 0,55. Résultat 0,41, donc le juge est refusé** —
+pas de colonne `note_vlm` dans le CSV d'évaluation.
+
+| forme | n | IoU | IoU orienté | note |
+|---|---|---|---|---|
+| `prim_anneau` | 9 | 0,828 | 0,828 | 4,2 |
+| `prim_croix` | 9 | 1,000 | 1,000 | 10,0 |
+| `prim_cube` | 9 | 0,958 | 0,958 | 10,0 |
+| `prim_cylindre` | 9 | 0,674 | 0,674 | 2,2 |
+| `prim_escalier` | 15 | 0,152 | 0,261 | 7,1 |
+| `prim_pave` | 9 | 0,889 | 0,889 | 10,0 |
+| `prim_pyramide` | 9 | 0,360 | 0,360 | 8,1 |
+| `prim_sphere` | 7 | 0,365 | 0,365 | 0,4 |
+| `prim_tour` | 15 | 0,996 | 0,996 | 6,0 |
+
+Accord exact sur les trois formes rectilignes à IoU élevé, effondrement sur les formes
+courbes. 8 valeurs de note distinctes sur 11 : l'échelle ne s'est pas effondrée, c'est un
+désaccord réel.
+
+Coût : **10,6 s par note**, 966 s pour les 91 — générateur déchargé. Recalculer les IoU
+sur des notes déjà produites coûte 0,3 s par note (`--resume`).
+
+### Trois barèmes, et ce que chacun a appris
+
+| | 3 ancres | plages + comptage | plages seules |
+|---|---|---|---|
+| ρ vs `iou` | 0,383 | 0,432 | **0,382** |
+| ρ sans `prim_escalier` | 0,644 | 0,551 | 0,502 |
+| valeurs de note distinctes | **3** | 9 | 8 |
+
+Le premier barème ne montrait que trois ancres (0, 5, 10) et le modèle n'a utilisé que ces
+trois valeurs : {0: 17, 5: 2, 10: 72}. Une échelle à trois crans plafonne mécaniquement
+Spearman — c'était un défaut du barème, pas du juge.
+
+Le deuxième changeait **deux choses à la fois** (plages de notes *et* consigne de compter
+les parties visibles) : la chute de 0,644 à 0,551 n'était donc attribuable à aucune des
+deux. Le troisième retire la seule consigne de comptage, et ne remonte pas. Les trois
+barèmes tiennent dans la même fourchette 0,38-0,43 : **le barème n'est pas le levier**.
+
+On s'arrête là. Au quatrième barème on n'étalonne plus un juge, on optimise un prompt
+contre un jeu de test de 91 rendus — et on fabrique le signal qu'on prétend mesurer.
+
+Chaque échec du générateur compte donc comme un échec du juge. **+2,85 est un plancher,
+pas une estimation.** C'est exactement pourquoi la calibration qui décide de l'US se
+fait sur le jeu primitives, où l'IoU dit ce qui a été produit indépendamment de ce qui
+était voulu.
+
+Notes de passage du juge, qui montrent qu'il voit réellement : le « phare » noté 0/10,
+« l'image représente un gâteau au chocolat, pas un phare » — et c'est bien ce que
+l'image montre. Une « maison » notée 0 sur les quatre sujets : c'est une dalle beige
+sans une arête.
+
+---
+
 ## Correspondance BrickLink
 
 Vérifiée **une par une** le 2026-10-12 sur bricklink.com. **4 pièces sur 26** portent un

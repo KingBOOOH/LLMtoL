@@ -48,3 +48,13 @@ LM_STUDIO_URL = os.environ.get("LM_STUDIO_URL",
 # dans l'interface LM Studio s'appliquent en fallback silencieux aux requetes API
 # qui n'envoient pas leur propre response_format (voir README).
 LM_STUDIO_MODEL = os.environ.get("LM_STUDIO_MODEL", "qwen/qwen3-coder-30b")
+
+# Modele VISION du juge visuel (US V2-01), interroge sur la MEME URL que le
+# generateur : LM Studio distingue les modeles par le champ `model` de la requete.
+# VIDE PAR DEFAUT = juge desactive. C'est voulu : aucune generation ne doit dependre
+# d'un modele optionnel, et la valeur n'est pas devinable (elle depend de ce qui est
+# telecharge sur le poste).
+# Le juge tourne en passe SEPAREE, apres les rendus : les deux modeles n'ont jamais
+# besoin d'etre charges en meme temps, ce qui compte sur une machine ou le generateur
+# retient deja ~18 Go.
+LM_STUDIO_VLM_MODEL = os.environ.get("LEGO_VLM_MODEL", "")
