@@ -164,6 +164,166 @@ fond configuré, pour 51 s sur un modèle de 1267 pièces.
 
 ---
 
+## Les flux de données
+
+La section précédente dit dans quel **ordre** les étapes s'enchaînent. Celle-ci dit où
+chaque donnée **atterrit**, qui a le droit de l'écrire, et ce qu'on peut perdre sans
+dommage. Trois questions pratiques : qu'est-ce qu'il faut sauvegarder, qu'est-ce qui se
+reconstruit tout seul, et pourquoi tel composant ne peut pas tourner ailleurs.
+
+### Ce qui traverse la chaîne
+
+Deux choses très différentes circulent, et les confondre est la principale source de
+malentendu sur ce projet : ce que les fonctions **se passent en mémoire** (à gauche du
+schéma), et ce qui est **écrit sur disque** (la colonne de droite). La plupart des fichiers
+écrits sont des traces et des livrables que plus rien ne relit.
+
+**Une seule exception, et elle est capitale : `model.ldr`.** Blender le relit depuis le
+disque, dans un processus séparé. C'est précisément ce qui rend le rendu rejouable sans
+rien régénérer — `tools/render_batch.py` ne fait rien d'autre que balayer des `model.ldr`
+déjà écrits.
+
+```
+  prompt
+    │
+    ▼
+  [A] src/planner.py            appel LLM libre          ──▶  plan.md
+    │       ▲
+    │       └── prompts/planner_system.txt
+    │ plan_text
+    ▼
+  [B] src/designer.py           appel LLM contraint      ──▶  design.json
+    │       ▲                                                 report.json
+    │       └── prompts/designer_system.txt + exemples few-shot
+    │
+    │   boucle de réparation, 2 tours au plus :
+    │     compile_design  ──▶ voxels
+    │     tile            ──▶ placements    (lit la bibliothèque LDraw)
+    │     validate        ──▶ report  ──▶  si erreurs, message renvoyé au modèle
+    │
+    │ placements
+    │
+    │   ═════ plus aucun appel LLM en aval d'ici ═════
+    │
+    ├──▶ src/ldraw_writer.py                             ──▶  model.ldr
+    │        │
+    │        └──▶ [F] Blender (ImportLDraw)              ──▶  render_{top,front,
+    │                 │   RELIT model.ldr + la bibliothèque      right,iso}.png
+    │                 └──▶ src/img_output.py             ──▶  final.png
+    │
+    └──▶ [E] src/bom.py  ──▶ rows                        ──▶  bom.csv, bom.html
+             │
+             ├──▶ src/wanted_list.py                     ──▶  wanted_list.xml
+             └──▶ src/instructions.py                    ──▶  notice.html
+```
+
+Trois choses que ce schéma dit et que l'ordre des étapes ne disait pas :
+
+- **La chaîne déterministe n'est pas en aval du designer, elle est dedans.**
+  `src/designer.py` appelle lui-même `compile_design`, `tile` et `validate` dans sa boucle,
+  et c'est le `report` du validateur qui repart vers le modèle sous forme de message de
+  réparation ciblé. C'est le **seul retour en arrière** du projet ; tout le reste va dans
+  un seul sens.
+- **Ce qui sort du designer, c'est `placements`** — la liste des vraies pièces posées, déjà
+  validée. `model.ldr` n'est qu'une sérialisation de cet objet, et `wanted_list.xml` ne
+  descend pas de `model.ldr` mais de la nomenclature (`rows`), une branche parallèle.
+- **La bibliothèque LDraw est lue deux fois, à deux fins.** Par `src/catalog.py` pendant le
+  pavage, pour les dimensions des pièces ; puis par Blender, pour leur géométrie réelle.
+
+L'étape [E] est **volontairement coupée** du reste : la nomenclature et la notice coûtent
+un rendu Blender par étape de montage. Quand plusieurs variantes sont proposées, seule
+celle que l'utilisateur retient la mérite — d'où la séparation entre
+`pipeline.generer_modele` et `pipeline.preparer_notice`.
+
+### L'invariant : le design DSL est la seule donnée irremplaçable
+
+`design.json` fait 20 lignes et décrit 400 pièces. **Tout ce qui est en aval s'en
+redéduit, à l'identique, sans un seul appel LLM** — c'est le sens de la ligne en double
+trait du schéma. Deux portes d'entrée l'exploitent :
+
+| | Depuis | Reconstruit |
+|---|---|---|
+| `python -m tools.build_from_design <design.json>` | un fichier sur disque | `model.ldr` |
+| `POST /api/jobs/<id>/regenerer` | la copie en base | rendus, notice, PDF |
+
+Conséquence concrète : si tu perds les rendus, tu les refais pour le prix d'un rendu
+Blender. Si tu perds les `design.json`, tu as perdu des appels LLM, c'est-à-dire du temps
+de génération. C'est le seul fichier dont la perte coûte vraiment quelque chose.
+
+C'est aussi pour ça qu'il est stocké **deux fois** : `design.json` sur disque, et
+`variantes.design_json` en JSONB dans Postgres. La copie en base est l'archive — elle
+survit à un `outputs/` effacé, et `tools/recover_eval.py` fait le pendant côté disque en
+reconstruisant un CSV depuis les `design.json` survivants.
+
+### Qui écrit où, et pourquoi c'est séparé
+
+| | Postgres | `outputs/` | LM Studio | Blender |
+|---|---|---|---|---|
+| `server/app.py` (API) | **écrit** | lit seulement | — | — |
+| `agent.py` | écrit | **écrit** | appelle | appelle |
+| `lego.py` / `pipeline.py` | — | écrit | appelle | appelle |
+
+**L'API ne génère rien et n'écrit jamais dans `outputs/`.** Son montage du dossier est en
+lecture seule, et l'image ne contient même pas `src/`. Elle dépose une demande en base et
+sert des fichiers ; c'est tout. La base joue le rôle de **file d'attente** : l'agent
+réclame un job avec `FOR UPDATE SKIP LOCKED`, ce qui rend l'ajout d'un second agent sûr —
+mais un seul à la fois, les deux se disputeraient LM Studio.
+
+Le découpage n'est pas esthétique, il est contraint : un conteneur Linux ne peut pas
+exécuter `blender.exe`, et la bibliothèque LDraw comme LM Studio vivent sur l'hôte.
+L'agent en conteneur joint LM Studio par `host.docker.internal`.
+
+### Ce qui va en base, et ce qui reste sur disque
+
+La base ne contient **aucune image**. Elle contient la demande, l'état, les mesures, et un
+*chemin* vers le disque :
+
+| En base (`jobs`, `variantes`) | Sur disque (`outputs/job_<uuid>/variante_NN/`) |
+|---|---|
+| `prompt`, `taille`, `n_variantes` | `prompt.txt`, `plan.md` |
+| `status`, `etape`, `etape_fait/total` | `log.txt`, `error.txt` |
+| `design_json` (JSONB) | `design.json` |
+| `score`, `n_pieces`, `fill_rate`, `z_min`… | `report.json` |
+| `render_dir` — **un chemin, pas un contenu** | `render_*.png`, `final.png`, `model.ldr` |
+| `pdf` (`LargeBinary`) | `bom.csv`, `bom.html`, `notice.html`, `wanted_list.xml` |
+| `llm_model`, `seed`, `repairs_used`, `code_version` | `*_request.json`, `*_raw.txt`, `*_meta.json` |
+
+L'asymétrie du bas du tableau est voulue : **le PDF est le seul binaire lourd qui entre en
+base**, parce qu'il est produit par un navigateur headless et qu'on ne veut pas le refaire
+pour le servir. Les images, elles, sont servies depuis le disque par chemin — les mettre
+en base gonflerait les sauvegardes pour rien.
+
+Les `*_request.json` / `*_raw.txt` / `*_meta.json` sont les **traces de chaque appel LLM**,
+écrites systématiquement par `src/llm_client.py`. Elles ne sont lues par aucun code : elles
+existent pour qu'un résultat surprenant six mois plus tard puisse être expliqué. Elles sont
+jetables.
+
+### Les entrées qui ne viennent pas du prompt
+
+| Entrée | Où | Lecture seule |
+|---|---|---|
+| bibliothèque LDraw (`.dat`) | hors dépôt, cherchée par `src/catalog.py`, `$LEGO_LDRAW_DIR` | oui |
+| system prompts, exemples few-shot | `prompts/` | oui |
+| jeux de test figés | `eval/testset.json`, `eval/primitives_testset.json` | oui |
+| lot de prompts | `prompts.json` | oui |
+| chemins, modèle, moteur de rendu | l'environnement, via `config.py` | oui |
+
+Le chemin LDraw résolu est transmis à Blender par `LEGO_LDRAW_DIR` **et** passé
+explicitement en `ldrawPath` : l'add-on cherchait sinon dans ses préférences enregistrées,
+ce qui marche sur un poste configuré à la main et nulle part ailleurs.
+
+### Les passes qui ne touchent pas à la chaîne
+
+Deux outils lisent les sorties sans rien y réinjecter — ils n'ont donc aucun moyen de
+fausser une génération :
+
+- `tools/render_batch.py` rend N modèles dans **un seul** processus Blender : il lit des
+  `model.ldr` et écrit des `.png`.
+- `src/juge_vlm.py` lit un `render_iso.png` et écrit un `juge_vlm.json` à côté. Il ne voit
+  jamais `design.json` — un modèle qui relirait du JSON remplacerait la réponse exacte de
+  `src/validator.py` par une opinion. Il écrit dans son propre fichier, jamais dans
+  `report.json`, qui ne contient que des mesures exactes. Voir *Le juge visuel*.
+
 ---
 
 ## Pile web
