@@ -389,3 +389,53 @@ def test_un_echec_total_ne_jette_pas_les_propositions_deja_acquises():
     i_garde = corps.index("if not acquises:")
     i_echec = corps.index('raise RuntimeError("aucune variante n\'a abouti")')
     assert i_garde < i_echec, "l'echec doit porter sur l'ensemble, pas sur le lot du jour"
+
+
+# ---------- pre-controle LM Studio ----------
+
+def test_un_precontrole_en_echec_attend_au_lieu_de_mourir(monkeypatch):
+    """Le piege mesure : SystemExit ici etait vu par Docker comme un plantage
+    (restart: unless-stopped), le conteneur redemarrait, le pre-controle redemandait
+    le modele de generation, et le JIT loading de LM Studio rechargeait 18,6 Go toutes
+    les quelques secondes — jusqu'a faire tuer par pression memoire tout autre travail.
+    """
+    import agent as agent_mod
+
+    reponses = [(False, "injoignable"), (False, "injoignable"), (True, "ok")]
+    attentes = []
+    monkeypatch.setattr(agent_mod.time, "sleep", attentes.append)
+    monkeypatch.setattr(agent_mod, "log", lambda _: None)
+
+    agent_mod.attendre_lm_studio(lambda: reponses.pop(0))
+
+    assert reponses == [], "le controle doit etre rejoue jusqu'a reussir"
+    assert attentes == [agent_mod.ATTENTE_LM_MIN_S, agent_mod.ATTENTE_LM_MIN_S * 2], \
+        "le recul doit croitre : un chargement de 18,6 Go doit avoir le temps d'aboutir"
+
+
+def test_le_recul_est_plafonne(monkeypatch):
+    """Sans plafond, l'agent finirait par ne plus reessayer qu'une fois par jour."""
+    import agent as agent_mod
+
+    attentes = []
+    monkeypatch.setattr(agent_mod.time, "sleep", attentes.append)
+    monkeypatch.setattr(agent_mod, "log", lambda _: None)
+
+    essais = [(False, "injoignable")] * 12 + [(True, "ok")]
+    agent_mod.attendre_lm_studio(lambda: essais.pop(0))
+
+    assert max(attentes) == agent_mod.ATTENTE_LM_MAX_S
+
+
+def test_une_passe_unique_ne_doit_pas_attendre(monkeypatch):
+    """`--une-fois` est lance a la main : on veut voir l'erreur, pas une attente."""
+    import pytest
+
+    import agent as agent_mod
+
+    monkeypatch.setattr(agent_mod, "log", lambda _: None)
+    monkeypatch.setattr(agent_mod.time, "sleep",
+                        lambda _: pytest.fail("aucune attente en passe unique"))
+
+    with pytest.raises(SystemExit, match="Agent non demarre"):
+        agent_mod.attendre_lm_studio(lambda: (False, "injoignable"), une_fois=True)

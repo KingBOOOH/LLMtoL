@@ -467,6 +467,41 @@ def traiter_un(session):
     return True
 
 
+# Recul entre deux pre-controles. Le pre-controle envoie une VRAIE requete de completion
+# — il faut voir ce que le modele repond pour detecter le Structured Output parasite — et
+# le JIT loading de LM Studio charge donc le modele de generation, 18,6 Go, pour y
+# repondre. Un SystemExit ici etait vu par Docker comme un plantage (`restart:
+# unless-stopped`) : le conteneur redemarrait, redemandait le modele, et rechargeait
+# 18,6 Go toutes les quelques secondes, jusqu'a tuer par pression memoire tout autre
+# travail en cours. Un refus DELIBERE de demarrer n'est pas un plantage. On attend, avec
+# un recul croissant qui laisse au chargement le temps d'aboutir au lieu de l'annuler.
+ATTENTE_LM_MIN_S = 10
+ATTENTE_LM_MAX_S = 300
+
+
+def attendre_lm_studio(preflight, une_fois=False):
+    """Bloque jusqu'a ce que LM Studio soit utilisable. Leve SystemExit si --une-fois.
+
+    Ne prend AUCUN job tant que le controle echoue : sous le piege du Structured Output,
+    le planificateur repond du JSON de cubes a n'importe quelle demande, et chaque job
+    traite serait un dechet. Attendre et ne rien prendre est le bon comportement d'un
+    agent ; mourir et renaitre n'en est pas un.
+    """
+    attente = ATTENTE_LM_MIN_S
+    while True:
+        ok, message = preflight()
+        log(f"pre-controle LM Studio : {message}")
+        if ok:
+            return
+        if une_fois:
+            raise SystemExit("\nAgent non demarre. Corrige le point ci-dessus, ou "
+                             "--skip-env-check pour forcer.")
+        log(f"  aucun job ne sera pris. Nouvel essai dans {attente} s "
+            "(--skip-env-check pour forcer).")
+        time.sleep(attente)
+        attente = min(attente * 2, ATTENTE_LM_MAX_S)
+
+
 def main():
     """Boucle de traitement. Verifie LM Studio avant d'accepter le premier job."""
     une_fois = "--une-fois" in sys.argv
@@ -475,14 +510,7 @@ def main():
 
     if "--skip-env-check" not in sys.argv:
         from tools.check_env import preflight_llm
-        ok, message = preflight_llm()
-        log(f"pre-controle LM Studio : {message}")
-        if not ok:
-            # Refuser de demarrer plutot que de transformer chaque job en dechet :
-            # sous le piege du Structured Output, le planificateur repond du JSON de
-            # cubes a n'importe quelle demande.
-            raise SystemExit("\nAgent non demarre. Corrige le point ci-dessus, ou "
-                             "--skip-env-check pour forcer.")
+        attendre_lm_studio(preflight_llm, une_fois)
 
     # L'agent peut demarrer avant l'API : il met le schema a jour lui aussi plutot
     # que d'echouer sur une colonne absente.
