@@ -340,9 +340,16 @@ Priorité 2 : RÉSOLUE, et la décision est prise.
   Le jeu a donc deux cas de sphère qui mesurent deux choses : prim_sphere mesure
   l'OBÉISSANCE à une méthode imposée, prim_sphere_libre mesure la construction d'une
   sphère. Ne pas confondre les deux en lisant une moyenne.
-  Piste ouverte, non mesurée : le cylindre n'est adopté que 6 fois sur 9 et son prompt
-  décrit lui aussi la forme ("la section horizontale est un disque"). La même suppression
-  le mènerait peut-être à 9/9.
+  CONFIRMÉ AUSSI SUR LE CYLINDRE, et c'est plus général qu'une dictée de méthode. Son
+  prompt se contente de DÉCRIRE la forme ("la section horizontale est un disque") — pas
+  de recette, pas d'ordre de montage. Ça suffit : 6 adoptions sur 9, IoU 0,674. En
+  retirant cette seule clause : 3/3 et 1,000. Au passage, l'erreur de hauteur disparaît
+  elle aussi (trois tentatives figées posaient z=0..4, soit 5 plates là où le plan disait
+  4) — en appelant l'op, le modèle n'a plus de bornes à calculer.
+  RÈGLE À EN TIRER pour tout prompt de jeu de test visant une forme que le DSL sait
+  rastériser : donner le NOM et les DIMENSIONS, et rien de plus. Décrire la géométrie,
+  même sans prescrire de méthode, pousse le modèle à la construire à la main — et il la
+  construit moins bien que l'op, voire moins bien qu'une boîte posée bêtement.
 
 Priorité 3 :
   LPub3D n'a jamais été évalué avant d'écrire src/instructions.py (le plan le demandait).

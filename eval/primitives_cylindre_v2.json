@@ -1,0 +1,15 @@
+[
+  {
+    "id": "prim_cylindre_v2",
+    "category": "courbe",
+    "complexity": "moyen",
+    "prompt": "Un cylindre plein de 9 tenons de diametre et 4 plates de haut.",
+    "reference": {
+      "shape": "cylinder",
+      "params": {
+        "diameter": 9,
+        "height": 4
+      }
+    }
+  }
+]

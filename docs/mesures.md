@@ -382,7 +382,7 @@ dans la même mesure. Référence d'IoU identique dans les trois cas.
 
 Entrées des deux essais : `eval/primitives_sphere_v2.json`, `eval/primitives_sphere_v3.json`.
 Sorties : `eval/results/_work/sphere_v2/`, `eval/results/_work/sphere_v3/`.
-Comparaison : `python -m tools.comparer_sphere_v2`.
+Comparaison : `python -m tools.comparer_adoption sphere`.
 
 Les trois designs de v3 sont identiques et tiennent en une ligne, sans aucune réparation :
 
@@ -425,3 +425,34 @@ deux questions différentes.
 Non mesuré : `prim_cylindre` n'est adopté que 6 fois sur 9 et son prompt décrit lui aussi
 la forme (« la section horizontale est un disque »). La même suppression le mènerait
 peut-être à 9/9.
+
+### Confirmé sur le cylindre : décrire la forme suffit à bloquer l'op
+
+Le prompt figé du cylindre ne dicte aucune méthode — il **décrit** seulement la forme.
+Ça suffit à faire perdre un tiers des adoptions.
+
+| version | prompt | op `cylinder` | IoU moyen |
+|---|---|---|---|
+| `prim_cylindre` (figé) | « …9 tenons de diametre et 4 plates de haut **: la section horizontale est un disque** » | 6 / 9 | 0,674 |
+| `prim_cylindre_v2` | **−** cette clause | **3 / 3** | **1,000** |
+
+Entrée : `eval/primitives_cylindre_v2.json`. Sortie : `eval/results/_work/cylindre_v2/`.
+Comparaison : `python -m tools.comparer_adoption cylindre`.
+
+Détail qui ne se voyait pas sur la sphère : trois des tentatives figées **adoptent
+pourtant l'op** et plafonnent quand même à 0,750, parce que leur plan pose `z=0..4` — cinq
+plates là où il annonce quatre. En appelant l'op avec `height: 4`, le modèle n'a plus de
+bornes à calculer et l'erreur disparaît. Repère : une boîte pleine 9×9×4 vaut déjà 0,852,
+soit mieux que la moyenne du cas figé.
+
+### La règle qui en sort
+
+Pour tout prompt de jeu de test visant une forme que le DSL sait rastériser : **donner le
+nom et les dimensions, rien de plus.** Décrire la géométrie — même sans prescrire de
+méthode, même en une demi-phrase — pousse le modèle à la construire à la main, et il la
+construit moins bien que l'opération, parfois moins bien qu'une boîte.
+
+| | clause en trop | adoption | IoU |
+|---|---|---|---|
+| sphère | une **recette** (« chaque couche… rétrécissant… ») | 0/7 → 3/3 | 0,365 → 1,000 |
+| cylindre | une **description** (« la section horizontale est un disque ») | 6/9 → 3/3 | 0,674 → 1,000 |
