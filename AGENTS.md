@@ -150,6 +150,13 @@ du temps trois fois. Vérifier avant tout run long.
   seul un json_schema explicite le fait. Le designer est donc immunisé, le planificateur
   NON. Se vide dans My Models > le modèle > vider System Prompt et Structured Output.
   Tant que ce n'est pas fait, eval/run_eval.py est inutilisable.
+  VÉRIFIÉ, et scriptable : les deux réglages sont deux entrées de la liste
+  `operation.fields` du JSON ci-dessus, repérées par leur clé. Les retirer de la liste
+  (en gardant `llm.prediction.promptTemplate`, qui est le template de chat légitime de
+  Qwen), décharger puis recharger le modèle, et `check_env.preflight_llm()` repasse au
+  vert. Fait une fois : le réglage contenait bien le générateur de cubes de la chaîne v0
+  supprimée. Sauvegarder le fichier avant (`.bak`) — c'est la config de LM Studio, pas
+  la nôtre.
 
 LE DÉFAUT VIENT SOUVENT DU PLANIFICATEUR, pas du designer. Deux fois sur deux : le
 décalage z (son plan écrivait "z=1..8") et la confusion plate/brique de prim_escalier.
@@ -168,6 +175,14 @@ LA SPHÈRE est ronde dans la grille mais APLATIE à l'écran (~2.5x) : `diameter
 autant de tenons en X/Y que de plates en Z, or un tenon fait 20 LDU et une plate 8.
 src/primitives.py assume ce choix et les références d'IoU l'utilisent ; changer l'un
 sans l'autre rendrait la métrique fausse.
+  CE N'EST PAS PROPRE À LA SPHÈRE : toute forme du jeu dont la hauteur est donnée en
+  plates est aplatie d'autant. Mesuré sur les rendus — prim_cube 2,5:1 (160x64 LDU),
+  prim_cylindre 5,6:1 (180x32 LDU). Les deux ressemblent à une galette, pas à leur nom.
+  Les prompts sont littéralement exacts ("8 tenons de côté et 8 plates de haut") et les
+  designs les respectent, d'où un IoU de ~1,0 : la référence est calculée dans les mêmes
+  unités, elle ne peut pas voir le problème. Donc ne JAMAIS lire un IoU élevé sur ce jeu
+  comme "le rendu ressemble à l'objet nommé" — il dit seulement "le rendu respecte la
+  spécification". Regarder le render_iso.png avant de conclure.
 
 UNE PENTE NE REMPLIT PAS SA BOÎTE ENGLOBANTE. w et d décrivent sa seule EMPREINTE
 HAUTE ; la rampe déborde d'une rangée qui doit être vide, dans la grille, et non déjà
@@ -218,6 +233,15 @@ ne disait jamais pourquoi.
 
 LES RUNS LONGS EN ARRIÈRE-PLAN se font tuer par la pression mémoire (LM Studio retient
 ~18 Go). Lancer en processus détaché via Start-Process, et utiliser --resume.
+  CAUSE DES ~18 Go, identifiée : le pré-contrôle de l'agent (agent.main ->
+  check_env.preflight_llm) envoie une VRAIE requête de complétion à LM_STUDIO_MODEL, et
+  le JIT loading de LM Studio charge donc le 30B pour répondre à un test de
+  disponibilité. Pire, l'agent conteneur a `restart: unless-stopped` : son refus
+  DÉLIBÉRÉ de démarrer est vu par Docker comme un plantage, d'où un rechargement de
+  18,63 Go toutes les quelques secondes. Avant une passe qui n'a pas besoin du
+  générateur (juge visuel, rendu, calibration) : `docker stop v0_0_5-agent-1` puis
+  `lms unload --all`. Vérifier avec `lms ps` que le 30B ne revient pas — s'il revient,
+  quelque chose l'appelle.
 
 SCHÉMA DE LA BASE : db/init.sql n'est joué qu'à la CRÉATION du volume Postgres. Un ajout
 de colonne sur une base en service passe par server.db.assurer_schema(), idempotent,
@@ -281,14 +305,23 @@ casser la compatibilité Windows (attention à l'encodage : sortie redirigée = 
 Priorités techniques actuelles
 
 Priorité 1 :
-  similarité sémantique (CLIP/VLM). Sur un objet non primitif, aucune métrique ne dit
-  aujourd'hui si le résultat ressemble au prompt. C'est le dernier grand trou : on sait
-  mesurer la validité géométrique et les formes primitives, rien entre les deux.
-  LM Studio sert plusieurs modèles à la fois (champ `model` de la requête, llm_client.py
-  l'envoie déjà) : un VLM qui note render_iso.png est la bonne forme. À calibrer d'abord
-  sur le jeu primitives, où l'IoU donne la vérité terrain — si la note du VLM ne corrèle
-  pas avec l'IoU connu, le juge est inutilisable et ça se sait sans dépenser une
-  génération.
+  similarité sémantique. Sur un objet non primitif, aucune métrique ne dit aujourd'hui si
+  le résultat ressemble au prompt. C'est le dernier grand trou : on sait mesurer la
+  validité géométrique et les formes primitives, rien entre les deux. TOUJOURS OUVERT.
+  UN VLM QUI NOTE DE 0 À 10 A ÉTÉ CONSTRUIT, CALIBRÉ ET REFUSÉ (US V2-01). Ne pas le
+  refaire. Corrélation de rang de 0,41 contre l'IoU connu sur 91 rendus, barrière annoncée
+  avant la mesure à 0,55. Cause diagnostiquée en regardant les rendus : le juge CHANGE DE
+  CRITÈRE — sur une boîte il vérifie les dimensions du prompt et valide, sur une courbe il
+  juge le nom et refuse. Trois barèmes essayés, tous entre 0,38 et 0,43 : le barème n'est
+  pas le levier, et un quatrième reviendrait à optimiser un prompt contre le jeu de test.
+  Le code reste, désactivé par défaut (LEGO_VLM_MODEL vide) : src/juge_vlm.py,
+  tools/calibrer_juge.py. Chiffres et images : docs/mesures.md, README.
+  Deux pistes restent, aucune essayée :
+    - CLIP (plonger image et prompt, cosinus) : coûte torch, ~2,5 Go, pour un projet qui a
+      quatre dépendances. À peser.
+    - faire DÉCRIRE l'image par le VLM, puis comparer la description au prompt par une
+      similarité de texte. Décrire est ce qu'un VLM fait bien ; noter est ce qu'il fait
+      mal, c'est mesuré. Plus de barème à régler, et un score continu.
   Ne PAS mettre un modèle texte à vérifier la géométrie : src/validator.py le fait déjà,
   exactement et gratuitement.
 
@@ -343,7 +376,7 @@ Prérequis vérifiables d'un coup : python tools/check_env.py
 
 Commandes utiles
 
-python -m pytest tests/ -q                      tests (259)
+python -m pytest tests/ -q                      tests (281)
 python -m ruff check .                          linter (pip install -r requirements-dev.txt)
 python tools/check_env.py                       diagnostic environnement
 python lego.py "<prompt>"                       UN modèle complet, en une commande

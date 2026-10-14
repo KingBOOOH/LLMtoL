@@ -129,8 +129,14 @@ def noter(prompt, image_path, log_dir, model=None, timeout=300):
     return sortie
 
 
-def note_existante(work_dir, bareme=None):
-    """Relit la note deja produite dans work_dir, ou None.
+def fiche_existante(work_dir, bareme=None):
+    """Relit la fiche complete deja produite dans work_dir, ou None.
+
+    Rend le dict entier et pas seulement la note : la raison et la duree sont
+    produites par le meme appel, et une reprise qui ne relit que la note les REMPLACE
+    PAR DU VIDE dans le CSV reecrit. Constate — les justifications du run de
+    calibration ont ete effacees de cette facon, et il a fallu aller les rechercher
+    dans les juge_vlm.json un par un.
 
     bareme : si fourni, une note produite par un AUTRE bareme est traitee comme
     absente, donc rejouee. Sans ca, --resume apres une modification du prompt
@@ -144,7 +150,13 @@ def note_existante(work_dir, bareme=None):
         donnees = json.load(f)
     if bareme is not None and donnees.get("bareme") != bareme:
         return None
-    return donnees.get("note")
+    return donnees
+
+
+def note_existante(work_dir, bareme=None):
+    """La seule note de la fiche, ou None. Voir fiche_existante."""
+    fiche = fiche_existante(work_dir, bareme)
+    return None if fiche is None else fiche.get("note")
 
 
 if __name__ == "__main__":

@@ -257,3 +257,47 @@ def test_une_note_sans_bareme_est_rejouee(tmp_path):
     """Note anterieure a ce champ : on ignore d'ou elle vient, donc on la refait."""
     (tmp_path / juge_vlm.NOM_FICHIER).write_text(json.dumps({"note": 8}), encoding="utf-8")
     assert juge_vlm.note_existante(str(tmp_path), juge_vlm.EMPREINTE_BAREME) is None
+
+
+def test_la_reprise_garde_la_raison_et_la_duree(tmp_path, monkeypatch):
+    """Le defaut constate : --resume ne relisait que la note, et reecrivait le CSV avec
+    raison et duree_s vides. Les justifications du run de calibration ont ete effacees
+    comme ca, et il a fallu aller les rechercher dans les juge_vlm.json un par un.
+    """
+    from tools import calibrer_juge
+
+    work = tmp_path / "v1prim" / "prim_cube" / "attempt_01"
+    work.mkdir(parents=True)
+    (work / "design.json").write_text(json.dumps(
+        {"name": "cube", "bbox": [2, 2, 2],
+         "ops": [{"op": "box", "from": [0, 0, 0], "to": [1, 1, 1], "color": "red"}]}),
+        encoding="utf-8")
+    (work / "render_iso.png").write_bytes(PNG_1X1)
+    (work / juge_vlm.NOM_FICHIER).write_text(json.dumps(
+        {"note": 7, "raison": "un cube reconnaissable", "duree_s": 9.4,
+         "bareme": juge_vlm.EMPREINTE_BAREME}), encoding="utf-8")
+
+    # Aucun appel au modele ne doit avoir lieu : tout est deja sur disque.
+    monkeypatch.setattr(juge_vlm, "noter",
+                        lambda *a, **k: pytest.fail("la reprise a rappele le modele"))
+    # _bilan ecrit son CSV sous BASE_DIR : sans ca le test deposerait un fichier dans
+    # eval/results/ du depot.
+    monkeypatch.setattr(calibrer_juge, "BASE_DIR", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+
+    lignes = calibrer_juge.calibrer(
+        "v1prim/*/attempt_*",
+        _testset_cube(tmp_path), "un-vlm", resume=True)
+
+    assert lignes[0]["note_vlm"] == 7
+    assert lignes[0]["raison"] == "un cube reconnaissable"
+    assert lignes[0]["duree_s"] == 9.4
+
+
+def _testset_cube(tmp_path):
+    """Jeu de test minimal sur disque : calibrer() attend un chemin, pas un dict."""
+    chemin = tmp_path / "testset.json"
+    chemin.write_text(json.dumps(
+        [{"id": "prim_cube", "prompt": "un cube",
+          "reference": {"shape": "cube", "params": {"side": 2}}}]), encoding="utf-8")
+    return str(chemin)

@@ -123,8 +123,11 @@ def calibrer(motif, testset_path, model, resume=False, limite=None):
 
     for i, (case_id, work_dir, fiche) in enumerate(cas, 1):
         iou, iou_or = iou_du_dossier(work_dir, fiche["reference"])
-        note = juge_vlm.note_existante(work_dir, juge_vlm.EMPREINTE_BAREME) if resume else None
-        raison, duree = "", 0.0
+        # La fiche entiere, pas la seule note : sinon la reprise reecrit le CSV avec
+        # des colonnes raison et duree_s vides, et efface ce qui expliquait les notes.
+        deja = juge_vlm.fiche_existante(work_dir, juge_vlm.EMPREINTE_BAREME) if resume else None
+        note, raison, duree = (None, "", 0.0) if deja is None else (
+            deja.get("note"), deja.get("raison", ""), deja.get("duree_s", 0.0))
 
         if note is None:
             try:
