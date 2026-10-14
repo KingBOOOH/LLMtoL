@@ -940,12 +940,41 @@ python -m eval.run_eval --compare eval/results/v0_<date>.csv eval/results/v1_<da
 | Jeu de test | Contenu | Mesure |
 |---|---|---|
 | `eval/testset.json` | 20 prompts, 4 catégories × 3 niveaux | validité géométrique |
-| `eval/primitives_testset.json` | 9 formes (cube, cylindre, sphère…) | **IoU** vs référence exacte |
+| `eval/primitives_testset.json` | 10 formes (cube, cylindre, sphère…) | **IoU** vs référence exacte |
 
 La métrique **IoU** (`src/primitives.py`) compare la forme produite à une référence
 calculée analytiquement : sur un prompt sémantique, un mauvais résultat ne dit pas *où*
 ça casse ; sur « un cube 8×8×8 », l'écart devient un chiffre. Elle est invariante à la
 translation mais pas à la taille.
+
+### Deux cas de sphère, et ils ne mesurent pas la même chose
+
+Le DSL a une opération `sphere`, rastérisée par la **même fonction** que la référence
+d'IoU : l'utiliser donne 1,000 par construction. Le modèle ne l'a pourtant **jamais**
+choisie — 0 fois sur 7 — et `prim_sphere` plafonnait à 0,365, le pire score du jeu.
+
+La cause, démontrée à variable unique : la phrase du prompt figé qui dicte la **méthode**.
+
+| prompt | op `sphere` | IoU |
+|---|---|---|
+| `prim_sphere`, tel quel | 0 / 7 | 0,365 |
+| + l'unité manquante (« et 7 plates de haut ») | 0 / 3 | 0,324 |
+| **− la méthode** (« chaque couche horizontale est un disque… ») | **3 / 3** | **1,000** |
+
+En retirant cette seule phrase, les trois designs produits sont identiques, longs d'**une
+ligne**, et aucun n'a demandé de réparation. Pour situer : un cylindre plein posé bêtement
+vaut 0,691 et une simple boîte 0,522 — **les couches dessinées à la main faisaient pire
+que de ne rien tenter**.
+
+D'où deux cas plutôt qu'un. `prim_sphere` **n'est pas corrigé** : son historique de mesures
+vaut plus que son score, et il mesure quelque chose de réel — l'obéissance à une méthode
+imposée. `prim_sphere_libre` mesure la construction d'une sphère. **Ne pas lire la moyenne
+du jeu sans savoir que les deux y sont.**
+
+Ce qu'il ne faut pas retenter, parce que c'est mesuré et sans effet : un exemple few-shot
+avec `sphere`, et l'allongement de `planner_system.txt`. La consigne d'unité y figure déjà
+deux fois, dont une dans le gabarit de sortie — le modèle recopie par-dessus l'unité qu'il
+lit dans le prompt utilisateur.
 
 Si un run est interrompu, les designs déjà produits survivent sur disque et les métriques
 se recalculent sans aucun appel LLM :

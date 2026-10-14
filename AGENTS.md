@@ -86,7 +86,7 @@ tools/recover_eval.py     reconstruit un CSV depuis les design.json survivants
 
 eval/run_eval.py             harnais, avec --resume et --compare
 eval/testset.json            20 prompts sémantiques figés
-eval/primitives_testset.json 9 formes primitives, avec référence calculable
+eval/primitives_testset.json 10 formes primitives, avec référence calculable
 
 Codex doit confirmer les fichiers réellement présents avant de modifier quoi que ce soit.
 
@@ -325,13 +325,24 @@ Priorité 1 :
   Ne PAS mettre un modèle texte à vérifier la géométrie : src/validator.py le fait déjà,
   exactement et gratuitement.
 
-Priorité 2 :
-  sphere n'est pas adopté, le modèle garde layer. Cause identifiée : le prompt figé du
-  jeu de test dicte la méthode ("chaque couche horizontale est un disque..."). Celui du
-  cylindre ne prescrit rien, d'où l'adoption immédiate. Ajouter un exemple few-shot avec
-  sphere a été essayé et MESURÉ : sans effet sur l'adoption, IoU dégradé, exemple retiré.
-  Décision à prendre : reformuler ce prompt du jeu figé (ce qui casse la comparabilité de
-  tout l'historique) ou accepter que ce cas mesure l'obéissance au prompt.
+Priorité 2 : RÉSOLUE, et la décision est prise.
+  sphere n'était pas adopté (0 fois sur 7) et prim_sphere plafonnait à 0,365. CAUSE
+  DÉMONTRÉE, à variable unique : la phrase du prompt figé qui dicte la MÉTHODE ("chaque
+  couche horizontale est un disque, le plus large au milieu, retrecissant..."). En la
+  retirant, et en ne changeant rien d'autre : adoption 3/3, IoU 1,000, design d'UNE ligne,
+  zéro réparation. Ce n'est pas l'unité en Z manquante — ça, c'est un autre défaut, réel
+  et corrigé au passage, mais qui ne change pas l'adoption (0/3).
+  Ne PAS retenter : un exemple few-shot avec sphere (mesuré, sans effet, IoU dégradé) ni
+  un allongement de planner_system.txt (la consigne d'unité y est DÉJÀ deux fois, dont une
+  en gabarit de sortie — le modèle recopie l'unité du prompt utilisateur par-dessus).
+  Décision appliquée : le cas figé prim_sphere reste INTACT (l'historique vaut plus que
+  son score), et un 10e cas prim_sphere_libre a été ajouté à côté avec le prompt mesuré.
+  Le jeu a donc deux cas de sphère qui mesurent deux choses : prim_sphere mesure
+  l'OBÉISSANCE à une méthode imposée, prim_sphere_libre mesure la construction d'une
+  sphère. Ne pas confondre les deux en lisant une moyenne.
+  Piste ouverte, non mesurée : le cylindre n'est adopté que 6 fois sur 9 et son prompt
+  décrit lui aussi la forme ("la section horizontale est un disque"). La même suppression
+  le mènerait peut-être à 9/9.
 
 Priorité 3 :
   LPub3D n'a jamais été évalué avant d'écrire src/instructions.py (le plan le demandait).

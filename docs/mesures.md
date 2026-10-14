@@ -368,3 +368,60 @@ Une chaîne antérieure demandait directement au LLM une liste de cubes : pas de
 pièces, aucune garantie géométrique, et **15 générations de créatures sur 15** produisaient
 des membres détachés. Ses mesures de référence restent figées dans `eval/results/` mais ne
 sont plus regénérables.
+
+## L'op `sphere` et le prompt qui la bloquait (Priorité 2)
+
+Trois formulations, chacune à **une clause** de la précédente — jamais deux changements
+dans la même mesure. Référence d'IoU identique dans les trois cas.
+
+| version | prompt | op `sphere` | IoU moyen |
+|---|---|---|---|
+| `prim_sphere` (figé) | « …7 tenons de diametre : chaque couche horizontale est un disque, le plus large au milieu, retrecissant… » | 0 / 7 | 0,365 |
+| `prim_sphere_v2` | **+** « et 7 plates de haut » | 0 / 3 | 0,324 |
+| `prim_sphere_v3` | **−** la clause de méthode | **3 / 3** | **1,000** |
+
+Entrées des deux essais : `eval/primitives_sphere_v2.json`, `eval/primitives_sphere_v3.json`.
+Sorties : `eval/results/_work/sphere_v2/`, `eval/results/_work/sphere_v3/`.
+Comparaison : `python -m tools.comparer_sphere_v2`.
+
+Les trois designs de v3 sont identiques et tiennent en une ligne, sans aucune réparation :
+
+```json
+{"op": "sphere", "at": [0, 0, 0], "diameter": 7, "color": "white"}
+```
+
+### Points de repère, pour situer les scores
+
+| ce qu'on pose | IoU vs la sphère de référence |
+|---|---|
+| op `sphere` | **1,000** (même rastériseur que la référence : c'est une identité, pas une performance) |
+| cylindre plein 7×7×7 | 0,691 |
+| boîte pleine 7×7×7 | 0,522 |
+| ce que le modèle produit en dessinant ses `layer` à la main | 0,087 à 0,527 |
+
+**Six tentatives sur dix font moins bien qu'une boîte carrée.** Dessiner les couches une à
+une pour obtenir un arrondi coûte plus que ça ne rapporte.
+
+### Deux défauts distincts, à ne pas confondre
+
+1. **L'unité en Z.** Aucun des 9 plans du cas figé n'écrit « 7 plates (H) » : six écrivent
+   « 7 tenons (H) », trois « 14 plates (H) », et quatre posent des sections jusqu'à z=14
+   dans un objet de 7 plates. Or `prompts/planner_system.txt` donne la consigne **deux
+   fois**, dont une dans son gabarit de sortie. Le modèle recopie l'unité du prompt
+   utilisateur par-dessus son propre gabarit. Ajouter la clause corrige ce défaut (3/3
+   corrects), mais ne change **rien** à l'adoption.
+2. **La dictée de méthode.** C'est elle, et elle seule, qui bloquait l'op.
+
+Conséquence : allonger `planner_system.txt` ne servirait à rien ici — la consigne y est
+déjà, et elle est écrasée par l'entrée.
+
+### Décision
+
+`prim_sphere` reste **intact** : son historique vaut plus que son score, et il mesure
+quelque chose de réel — l'obéissance à une méthode imposée. Un 10e cas,
+`prim_sphere_libre`, porte le prompt mesuré. Le jeu a donc deux sphères qui répondent à
+deux questions différentes.
+
+Non mesuré : `prim_cylindre` n'est adopté que 6 fois sur 9 et son prompt décrit lui aussi
+la forme (« la section horizontale est un disque »). La même suppression le mènerait
+peut-être à 9/9.

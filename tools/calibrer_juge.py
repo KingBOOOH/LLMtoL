@@ -43,6 +43,12 @@ import statistics
 import sys
 import time
 
+# Sortie redirigee = cp1252 sous Windows, et les raisons du juge sont en francais
+# accentue. Sans ca, un run long redirige vers un fichier journal rend du mojibake.
+# Meme ligne que agent.py, pipeline.py et lego.py.
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src import juge_vlm
 from src.compiler import compile_design

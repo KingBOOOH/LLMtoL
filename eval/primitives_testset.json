@@ -35,6 +35,11 @@
     "reference": {"shape": "sphere", "params": {"diameter": 7}}
   },
   {
+    "id": "prim_sphere_libre", "category": "courbe", "complexity": "detaille",
+    "prompt": "Une sphere pleine de 7 tenons de diametre et 7 plates de haut.",
+    "reference": {"shape": "sphere", "params": {"diameter": 7}}
+  },
+  {
     "id": "prim_pyramide", "category": "courbe", "complexity": "moyen",
     "prompt": "Une pyramide a base carree de 9 tenons de cote et 6 plates de haut : chaque couche est un carre plein, de plus en plus petit vers le sommet.",
     "reference": {"shape": "pyramid", "params": {"base": 9, "height": 6}}
