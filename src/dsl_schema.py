@@ -15,6 +15,10 @@ bornes du bbox par requete : c'est ainsi qu'on borne la taille d'un modele. Dema
 d'emettre une coordonnee hors bornes : c'est une garantie, pas une consigne.
 """
 
+# Importes et non recopies : l'emprise verticale d'une sphere se calcule avec eux, et
+# une constante dupliquee finit toujours par diverger de son original.
+from src.primitives import LDU_PAR_PLATE, LDU_PAR_TENON
+
 PALETTE_NAMES = [
     "black", "dark_gray", "light_gray", "white",
     "red", "reddish_brown", "brown", "tan",
@@ -201,7 +205,18 @@ def build_schema(bbox_max=None):
         "properties": {
             "op": {"const": "sphere"},
             "at": point,
-            "diameter": {"type": "integer", "minimum": 1, "maximum": min(bornes)},
+            # Une sphere est ronde A L'ECRAN : elle occupe LDU_PAR_TENON/LDU_PAR_PLATE
+            # fois plus de plates en Z que de tenons en X/Y. Son diametre est donc
+            # borne par la hauteur disponible, pas seulement par l'emprise au sol —
+            # sans ca le schema autoriserait une sphere qui deborde par le haut, et la
+            # borne de bbox ne serait plus une garantie. max(1, ...) parce qu'un
+            # bbox_max tres plat rendrait sinon le schema insatisfiable, et LM Studio
+            # doit pouvoir le compiler en grammaire.
+            "diameter": {
+                "type": "integer", "minimum": 1,
+                "maximum": max(1, min(bornes[0], bornes[1],
+                                      int(bornes[2] * LDU_PAR_PLATE / LDU_PAR_TENON))),
+            },
             "color": COLOR,
         },
         "additionalProperties": False,

@@ -5,14 +5,39 @@ casse (plan ? DSL ? pavage ? limite des briques rectangulaires ?). Sur "un cube 
 8x8x8", la reponse correcte est calculable analytiquement, donc l'ecart devient un
 chiffre (IoU) au lieu d'un jugement subjectif.
 
-Les dimensions sont donnees directement dans les unites de la grille interne :
-X et Y en tenons, Z en plates (voir src.compiler). L'anisotropie reelle du LEGO
-(1 tenon = 20 LDU, 1 plate = 8 LDU) n'est volontairement PAS prise en compte ici :
-premier barreau de l'echelle, on veut des references sans ambiguite. Une sphere
-"physiquement ronde" (donc ~2.5x plus haute en plates qu'en tenons) viendra plus tard.
+Les dimensions sont donnees dans les unites de la grille interne : X et Y en tenons,
+Z en plates (voir src.compiler).
+
+L'ANISOTROPIE EST PRISE EN COMPTE LA OU LE NOM DE LA FORME L'EXIGE, ET NULLE PART
+AILLEURS. Un tenon vaut 20 LDU, une plate 8 : une grille cubique est donc un objet
+ecrase 2,5x a l'ecran.
+
+  sphere   CORRIGEE. Une sphere est isotrope PAR DEFINITION : son unique parametre
+           doit valoir la meme longueur reelle sur les trois axes. Elle occupe donc
+           ~2,5x plus de plates en Z que de tenons en X/Y. C'etait documente ici comme
+           "viendra plus tard" ; la mesure qui a decide est dans docs/mesures.md — un
+           juge visuel a note 0/10, trois fois, des spheres a IoU 1,000, en ecrivant
+           "un bloc rectangulaire, pas une sphere". Il avait raison et la metrique
+           etait aveugle.
+  cylinder INCHANGE, et ce n'est pas un oubli : sa hauteur est un parametre explicite
+           en plates. Demander 9 tenons de diametre et 4 plates de haut, c'est demander
+           une galette ; l'obtenir est correct.
+  cube/box INCHANGES : leurs dimensions sont donnees axe par axe, dans les unites de
+           la grille. Un "cube" de 8x8x8 est donc ecrase a l'ecran, mais le prompt dit
+           bien "8 tenons de cote et 8 plates de haut" — il n'y a pas d'ambiguite a
+           lever, seulement un nom trompeur. Voir AGENTS.md.
+
+Ces fonctions servent A LA FOIS de reference d'IoU et de rasteriseur aux operations
+`cylinder` et `sphere` du DSL (src.compiler les importe). C'est voulu : les changer ici
+change les deux ensemble, et elles ne peuvent pas diverger.
 """
 
 import numpy as np
+
+# Geometrie LDraw, relevee et non supposee : un tenon fait 20 LDU de cote, une plate
+# 8 LDU de haut. Tout le rapport d'aspect du projet tient dans ces deux nombres.
+LDU_PAR_TENON = 20
+LDU_PAR_PLATE = 8
 
 
 def cube(side):
@@ -37,15 +62,39 @@ def cylinder(diameter, height):
     return grid
 
 
+def hauteur_sphere(diameter):
+    """Hauteur en PLATES d'une sphere de `diameter` tenons, arrondie au plus proche.
+
+    diameter tenons font diameter * 20 LDU ; il faut autant de LDU en hauteur, soit
+    diameter * 20 / 8 plates. Arrondi au plus proche explicitement (+0.5 puis
+    troncature) et non par round(), dont la regle du demi pair ferait tomber un
+    diametre impair du mauvais cote une fois sur deux.
+    """
+    return int(diameter * LDU_PAR_TENON / LDU_PAR_PLATE + 0.5)
+
+
 def sphere(diameter):
-    """Sphere pleine (voxelisee dans une grille cubique de cote `diameter`)."""
-    grid = np.zeros((diameter, diameter, diameter), dtype=np.int16)
-    center = (diameter - 1) / 2.0
-    radius = diameter / 2.0
+    """Sphere pleine, RONDE A L'ECRAN et non dans la grille.
+
+    `diameter` est un diametre reel, en tenons. La grille fait donc diameter tenons en
+    X/Y mais hauteur_sphere(diameter) plates en Z — environ 2,5x plus de cellules —
+    parce qu'une plate est 2,5x plus basse qu'un tenon n'est large.
+
+    L'appartenance se teste EN LDU, pas en cellules : c'est la seule facon d'obtenir
+    une sphere dont les trois demi-axes mesurent la meme longueur reelle.
+    """
+    hauteur = hauteur_sphere(diameter)
+    grid = np.zeros((diameter, diameter, hauteur), dtype=np.int16)
+    cx = cy = (diameter - 1) / 2.0
+    cz = (hauteur - 1) / 2.0
+    rayon_ldu = diameter * LDU_PAR_TENON / 2.0
     for x in range(diameter):
+        dx = (x - cx) * LDU_PAR_TENON
         for y in range(diameter):
-            for z in range(diameter):
-                if (x - center) ** 2 + (y - center) ** 2 + (z - center) ** 2 <= radius ** 2:
+            dy = (y - cy) * LDU_PAR_TENON
+            for z in range(hauteur):
+                dz = (z - cz) * LDU_PAR_PLATE
+                if dx * dx + dy * dy + dz * dz <= rayon_ldu ** 2:
                     grid[x, y, z] = 1
     return grid
 

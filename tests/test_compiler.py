@@ -137,15 +137,19 @@ def test_cylinder_matches_primitive_reference_exactly():
 
 
 def test_sphere_matches_primitive_reference_exactly():
-    from src.primitives import build_reference, voxel_iou
+    """Le bbox doit etre AUSSI HAUT que la sphere est ronde : une sphere de 10 tenons
+    de diametre occupe 25 plates en Z, pas 10. C'est ce que borne build_schema."""
+    from src.primitives import build_reference, hauteur_sphere, voxel_iou
 
-    grid = compile_design(_design([10, 10, 10], [
+    hauteur = hauteur_sphere(10)
+    assert hauteur == 25
+    grid = compile_design(_design([10, 10, hauteur], [
         {"op": "sphere", "at": [0, 0, 0], "diameter": 10, "color": "blue"}
     ]))
     reference = build_reference({"shape": "sphere", "params": {"diameter": 10}})
     assert voxel_iou(reference, grid) == 1.0
     assert grid[0, 0, 0] == 0
-    assert grid[5, 5, 5] == COLOR_INDEX["blue"]
+    assert grid[5, 5, hauteur // 2] == COLOR_INDEX["blue"]
 
 
 def test_cylinder_at_is_bbox_corner_not_centre():
@@ -159,8 +163,12 @@ def test_cylinder_at_is_bbox_corner_not_centre():
 
 
 def test_oversized_sphere_is_clipped_not_raised(capsys):
+    """Une sphere trop grosse est rognee avec un avertissement, jamais une exception.
+
+    Elle deborde desormais surtout par le HAUT : 10 tenons de diametre font 25 plates.
+    """
     grid = compile_design(_design([6, 6, 6], [
-        {"op": "sphere", "at": [3, 3, 3], "diameter": 10, "color": "red"}
+        {"op": "sphere", "at": [0, 0, 0], "diameter": 10, "color": "red"}
     ]))
     assert np.count_nonzero(grid) > 0
     assert "hors grille" in capsys.readouterr().out

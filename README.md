@@ -917,10 +917,15 @@ aucune dérive possible entre ce qu'on produit et ce qu'on mesure (test verrouil
 
 Deux limites à connaître :
 
-- Une sphère est ronde **dans la grille**, donc aplatie ~2,5× à l'écran : un `diameter`
-  compte autant de tenons en X/Y que de plates en Z, or un tenon fait 20 LDU et une
-  plate 8. Les références d'IoU utilisent la même convention ; changer l'une sans
-  l'autre fausserait la métrique.
+- **La grille n'est pas isotrope** : un tenon fait 20 LDU de large, une plate 8 LDU de
+  haut. Une grille cubique est donc un objet écrasé 2,5× à l'écran. `cube`, `box` et
+  `cylinder` reçoivent leurs dimensions axe par axe — c'est l'utilisateur qui décide, et
+  un cylindre de 9 tenons sur 4 plates est bien une galette parce que c'est ce qui a été
+  demandé. **La sphère, elle, est isotrope par définition** : son unique paramètre est un
+  diamètre réel, et elle occupe donc ~2,5× plus de plates en Z que de tenons en X/Y — 18
+  plates pour 7 tenons. La référence d'IoU et le rastériseur du DSL sont la même
+  fonction, donc les deux ne peuvent pas diverger. Voir *Une sphère qui n'en était pas
+  une*.
 - `translate_group` n'accepte pas `cylinder`/`sphere` en imbriqué. Chaque variante
   grossit la grammaire que LM Studio compile, et l'inférence est déjà limitée par le
   CPU — à ouvrir seulement si une mesure montre que ça manque.

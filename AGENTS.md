@@ -171,18 +171,27 @@ prim_escalier est DIAGNOSTIQUÉ : la forme est exacte, le score vient d'une conf
 plate/brique et d'une rotation que la métrique ne tolère pas. DEUX correctifs de prompt
 ont été essayés et mesurés, sans effet : NE PAS LES RETENTER. Voir docs/mesures.md.
 
-LA SPHÈRE est ronde dans la grille mais APLATIE à l'écran (~2.5x) : `diameter` vaut
-autant de tenons en X/Y que de plates en Z, or un tenon fait 20 LDU et une plate 8.
-src/primitives.py assume ce choix et les références d'IoU l'utilisent ; changer l'un
-sans l'autre rendrait la métrique fausse.
-  CE N'EST PAS PROPRE À LA SPHÈRE : toute forme du jeu dont la hauteur est donnée en
-  plates est aplatie d'autant. Mesuré sur les rendus — prim_cube 2,5:1 (160x64 LDU),
-  prim_cylindre 5,6:1 (180x32 LDU). Les deux ressemblent à une galette, pas à leur nom.
-  Les prompts sont littéralement exacts ("8 tenons de côté et 8 plates de haut") et les
-  designs les respectent, d'où un IoU de ~1,0 : la référence est calculée dans les mêmes
-  unités, elle ne peut pas voir le problème. Donc ne JAMAIS lire un IoU élevé sur ce jeu
-  comme "le rendu ressemble à l'objet nommé" — il dit seulement "le rendu respecte la
-  spécification". Regarder le render_iso.png avant de conclure.
+LA GRILLE N'EST PAS ISOTROPE : un tenon fait 20 LDU de large, une plate 8 LDU de haut.
+Une grille cubique est donc un objet écrasé 2,5x à l'écran. Constantes nommées dans
+src/primitives.py (LDU_PAR_TENON, LDU_PAR_PLATE) — ne pas recopier le 2,5 ailleurs.
+  LA SPHÈRE EST CORRIGÉE et ne doit pas être "re-simplifiée". Son `diameter` est un
+  diamètre RÉEL en tenons : elle occupe hauteur_sphere(d) ~= 2,5*d plates en Z, et
+  l'appartenance se teste EN LDU. Une sphère de 7 tenons fait donc 18 plates de haut.
+  La référence d'IoU et le rastériseur du DSL sont la MÊME fonction : les changer là
+  les change ensemble, et c'est tout l'intérêt. build_schema borne `diameter` par la
+  hauteur disponible, sinon le bbox cesserait d'être une garantie.
+  LE RESTE EST TOUJOURS EN UNITÉS DE GRILLE, et c'est voulu : cube, box et cylinder
+  reçoivent leurs dimensions axe par axe, donc l'utilisateur décide. Un "cube" 8x8x8
+  est écrasé à l'écran (160x64 LDU) et un cylindre 9 tenons x 4 plates est une galette
+  (180x32) — mais les prompts disent bien "8 plates de haut", il n'y a pas d'ambiguïté
+  à lever, seulement un nom trompeur. La sphère était différente : isotrope PAR
+  DÉFINITION, elle n'a qu'un paramètre, qui ne peut pas valoir deux longueurs.
+  DONC ne jamais lire un IoU élevé comme "le rendu ressemble à l'objet nommé" : il dit
+  "le rendu respecte la spécification". Regarder le render_iso.png avant de conclure.
+  C'est un juge visuel qui a levé le lièvre, en notant 0/10 des sphères à IoU 1,000.
+  ATTENTION À LA RÉSOLUTION avant de crier au bug : à 7 tenons de diamètre une sphère
+  en briques ressemble à un cube aux coins coupés, et c'est normal. À 16 tenons (40
+  plates, 1120 pièces) elle est franchement ronde. Vérifié sur rendu.
 
 UNE PENTE NE REMPLIT PAS SA BOÎTE ENGLOBANTE. w et d décrivent sa seule EMPREINTE
 HAUTE ; la rampe déborde d'une rangée qui doit être vide, dans la grille, et non déjà

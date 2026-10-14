@@ -27,7 +27,9 @@ Available operations (the "op" field of each entry in "ops"):
   "color":"<name>"} — a solid circular cylinder extruded along Z. `at` is the lowest
   corner of its bounding box, NOT the centre.
 - sphere {"op":"sphere","at":[x,y,z],"diameter":<int>,"color":"<name>"} — a solid
-  sphere. `at` is the lowest corner of its bounding box, NOT the centre.
+  sphere, round ON SCREEN. It spans `diameter` studs in X and Y but about 2.5 times as
+  many plates in Z, because a stud is 20 LDU wide while a plate is 8 LDU tall. Size the
+  bbox accordingly. `at` is the lowest corner of its bounding box, NOT the centre.
 - mirror {"op":"mirror","axis":"x"|"y"|"z"} — duplicates everything built so far by
   mirroring it across the middle of the given axis.
 - translate_group {"op":"translate_group","ops":[...nested box/carve/column/layer...],

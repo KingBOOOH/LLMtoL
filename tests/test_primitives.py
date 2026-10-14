@@ -36,10 +36,32 @@ def test_cylinder_has_constant_circular_section():
 
 def test_sphere_is_widest_in_the_middle():
     grid = sphere(9)
-    per_layer = [np.count_nonzero(grid[:, :, z]) for z in range(9)]
-    assert per_layer[4] == max(per_layer)
-    assert per_layer[0] < per_layer[4]
-    assert per_layer[0] == per_layer[8], "symetrique haut/bas"
+    nz = grid.shape[2]
+    per_layer = [np.count_nonzero(grid[:, :, z]) for z in range(nz)]
+    assert per_layer[nz // 2] == max(per_layer)
+    assert per_layer[0] < per_layer[nz // 2]
+    assert per_layer[0] == per_layer[-1], "symetrique haut/bas"
+
+
+def test_sphere_is_round_on_screen_not_in_the_grid():
+    """Le defaut que ce test aurait attrape : une grille cubique donne une GALETTE.
+
+    Un tenon fait 20 LDU de large, une plate 8 LDU de haut. Une sphere voxelisee dans
+    une grille cubique est donc ecrasee 2,5x a l'ecran — ce qu'aucun test ne verifiait,
+    et qu'un juge visuel a fini par signaler en notant 0/10 trois spheres a IoU 1,000.
+    Ce qui compte est la longueur REELLE des demi-axes, pas le compte de cellules.
+    """
+    from src.primitives import LDU_PAR_PLATE, LDU_PAR_TENON
+
+    for diametre in (4, 7, 9, 10):
+        grid = sphere(diametre)
+        pleins = np.argwhere(grid != 0)
+        largeur = (pleins[:, 0].max() - pleins[:, 0].min() + 1) * LDU_PAR_TENON
+        hauteur = (pleins[:, 2].max() - pleins[:, 2].min() + 1) * LDU_PAR_PLATE
+        assert abs(largeur / hauteur - 1.0) < 0.05, (
+            f"diametre {diametre} : {largeur} x {hauteur} LDU, "
+            f"rapport {largeur / hauteur:.2f} au lieu de ~1")
+        assert largeur == diametre * LDU_PAR_TENON, "la largeur reste le diametre demande"
 
 
 def test_pyramid_shrinks_with_height():

@@ -140,11 +140,14 @@ def _apply_cylinder(grid, op, warnings, op_idx):
 def _apply_sphere(grid, op, warnings, op_idx):
     """Sphere pleine, rasterisee par src.primitives (meme coin bas que cylinder).
 
-    Attention : `diameter` vaut autant de tenons en X/Y que de plates en Z, alors qu'un
-    tenon fait 20 LDU et une plate 8 LDU. La sphere est donc ronde dans la grille mais
-    APLATIE a l'ecran (~2.5x). C'est volontaire : src.primitives utilise la meme
-    convention pour les references d'IoU, et en changer une seule des deux rendrait la
-    metrique fausse. Rendre la sphere physiquement ronde demande de changer les deux.
+    `diameter` est un diametre REEL, en tenons : la sphere occupe donc environ 2,5x
+    plus de plates en Z que de tenons en X/Y (un tenon vaut 20 LDU, une plate 8).
+    src.primitives.hauteur_sphere() donne cette emprise, et build_schema borne le
+    diametre en consequence pour que la sphere ne puisse pas deborder du bbox.
+
+    Il n'y a rien a synchroniser a la main : la reference d'IoU et ce rasteriseur sont
+    la MEME fonction. Elles ont longtemps partage une sphere cubique dans la grille,
+    donc aplatie a l'ecran ; ce qui a tranche est dans docs/mesures.md.
     """
     mask = _sphere_mask(op["diameter"]) != 0
     _stamp(grid, mask, op["at"], COLOR_INDEX[op["color"]], warnings, op_idx, "sphere")

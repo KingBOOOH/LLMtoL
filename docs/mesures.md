@@ -456,3 +456,58 @@ construit moins bien que l'opération, parfois moins bien qu'une boîte.
 |---|---|---|---|
 | sphère | une **recette** (« chaque couche… rétrécissant… ») | 0/7 → 3/3 | 0,365 → 1,000 |
 | cylindre | une **description** (« la section horizontale est un disque ») | 6/9 → 3/3 | 0,674 → 1,000 |
+
+## La sphère était une galette (correction de la géométrie)
+
+`src/primitives.py` documentait ce choix comme délibéré et différé : *« l'anisotropie
+réelle du LEGO n'est volontairement PAS prise en compte ici […] une sphère physiquement
+ronde viendra plus tard. »* Ce qui a décidé que « plus tard » était maintenant : le juge
+visuel a noté **0/10, trois fois**, des sphères à **IoU 1,000**, en écrivant « un bloc
+rectangulaire, pas une sphère ». Il avait raison, et les deux métriques du projet étaient
+aveugles — l'IoU parce que sa référence utilise les mêmes unités que l'objet mesuré.
+
+### Ce qui a changé
+
+| | avant | après |
+|---|---|---|
+| grille d'une sphère de 7 tenons | 7 × 7 × **7** | 7 × 7 × **18** |
+| emprise réelle | 140 × **56** LDU | 140 × **144** LDU |
+| rapport largeur / hauteur | **0,40** | **0,97** |
+
+L'appartenance se teste désormais **en LDU** et non en cellules. `cylinder`, `cube` et
+`box` ne changent pas : leurs dimensions sont données axe par axe, donc une galette
+demandée est une galette livrée. La sphère était le seul cas où un paramètre unique
+devait valoir deux longueurs différentes.
+
+### Le correctif n'a pas suffi : il a fallu prévenir le planificateur
+
+Première mesure après correction, 3 générations : l'op `sphere` est bien adoptée 3/3,
+mais **les 3 plans écrivent une boîte englobante de 7 plates de haut**, donc la sphère est
+rognée et retombe à 0,338. Le prompt du designer avait été mis à jour, pas celui du
+planificateur — or c'est **lui** qui écrit la boîte. Encore le piège documenté : le défaut
+vient du planificateur.
+
+Après ajout de l'emprise verticale dans `prompts/planner_system.txt` :
+
+| | bbox du plan | op | IoU | débordements |
+|---|---|---|---|---|
+| avant | `7 × 7 × 7` ×3 | `sphere` 3/3 | 0,338 | 3 |
+| après | `7 × 7 × 18` ×3 | `sphere` 3/3 | **1,000** | **0** |
+
+### Attention à la résolution avant de crier au bug
+
+À 7 tenons de diamètre, une sphère en briques ressemble à un cube aux coins coupés — le
+juge visuel la note d'ailleurs toujours 0/10 en disant « un cube », et ce n'est pas
+absurde. À **16 tenons** (40 plates, 1120 pièces) elle est franchement ronde. Vérifié sur
+rendu dans les deux cas.
+
+Ce qui en dit long sur le juge : il a **détecté** un vrai défaut que deux métriques
+exactes laissaient passer, mais il est incapable d'en **valider** la correction. Bon
+détecteur d'anomalie, mauvais arbitre.
+
+### Coût
+
+Les designs écrits sous l'ancienne convention (bbox de 7 plates pour une sphère de 7
+tenons) débordent désormais : ils tombent de 1,000 à 0,338, avec un avertissement
+`depasse la grille` — rogné bruyamment, jamais en silence. Toute comparaison d'IoU sur
+`prim_sphere` d'avant et d'après cette date est invalide.

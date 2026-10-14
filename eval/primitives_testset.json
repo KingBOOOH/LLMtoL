@@ -36,7 +36,7 @@
   },
   {
     "id": "prim_sphere_libre", "category": "courbe", "complexity": "detaille",
-    "prompt": "Une sphere pleine de 7 tenons de diametre et 7 plates de haut.",
+    "prompt": "Une sphere pleine de 7 tenons de diametre.",
     "reference": {"shape": "sphere", "params": {"diameter": 7}}
   },
   {

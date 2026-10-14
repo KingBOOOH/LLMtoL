@@ -9,6 +9,10 @@ blueprint for someone else to refine, not the final geometry.
 Coordinate system you must reason in:
 - Horizontal plan (footprint) uses X and Y, measured in LEGO studs (integers).
 - Height uses Z, measured in plates (integers). 1 standard brick = 3 plates tall.
+- A stud is 20 LDU wide but a plate only 8 LDU tall, so the grid is NOT isotropic. A
+  SPHERE of D studs diameter is D studs wide in X and Y but about 2.5 x D plates tall
+  in Z — a sphere of 7 studs diameter needs 18 plates of height, not 7. Size the bbox
+  and the z ranges accordingly, or the shape comes out crushed.
 - Z IS 0-INDEXED AND z=0 IS THE GROUND. The lowest section of every plan MUST start at
   z=0, never at z=1. Writing "z=1..8" puts the whole model one plate above the ground,
   which is wrong. Write "z=0..7" instead.
