@@ -36,6 +36,24 @@ TAILLES = {
     "grande": BBOX_MAX,
 }
 
+# PLANCHER de chaque taille = PLAFOND de la taille en dessous. Les trois intervalles ne
+# se recouvrent donc pas, et "grande" ne peut plus rendre un modele plus petit que
+# "moyenne" : c'est une garantie du schema, pas une consigne au modele.
+#
+# Pourquoi il en faut un : mesure de l'issue #18, 3 generations par taille sur le meme
+# prompt. "petite" saturait sa borne, "moyenne" s'en approchait, et "grande" rendait
+# [16,16,24], [24,24,24], [16,16,12] — jamais plus que "petite". Un plafond seul ne
+# choisit rien, et le prompt du planificateur lui souffle par ailleurs de preferer des
+# tailles modestes.
+#
+# Derive de TAILLES plutot que recopie : deux tables a tenir a la main finissent
+# toujours par diverger.
+_ORDRE = list(TAILLES)
+PLANCHERS = {
+    nom: ([1, 1, 1] if i == 0 else list(TAILLES[_ORDRE[i - 1]]))
+    for i, nom in enumerate(_ORDRE)
+}
+
 OPS = ["box", "carve", "column", "layer", "cylinder", "sphere", "mirror",
        "translate_group"]
 
@@ -83,7 +101,30 @@ def resoudre_bornes(taille=None, bbox_max=None):
     return list(TAILLES[taille])
 
 
-def build_schema(bbox_max=None):
+def resoudre_plancher(taille=None, bbox_min=None, bbox_max=None):
+    """Retourne le plancher [X, Y, Z] a imposer au bbox. bbox_min l'emporte sur taille.
+
+    Sans taille nommee, pas de plancher : une generation sans option doit se comporter
+    exactement comme avant.
+
+    Le plancher est rabote au plafond effectif, parce que `--bbox-max` peut etre plus
+    petit que le plancher de la taille nommee — un plancher superieur au plafond rendrait
+    le schema insatisfiable, et LM Studio doit pouvoir le compiler en grammaire.
+    """
+    if bbox_min is not None:
+        plancher = list(bbox_min)
+        if len(plancher) != 3 or any(not isinstance(v, int) or v < 1 for v in plancher):
+            raise ValueError(f"bbox_min doit etre 3 entiers >= 1, recu {bbox_min!r}")
+    elif taille is not None and taille in PLANCHERS:
+        plancher = list(PLANCHERS[taille])
+    else:
+        return [1, 1, 1]
+
+    plafond = resoudre_bornes(taille, bbox_max)
+    return [min(p, m) for p, m in zip(plancher, plafond)]
+
+
+def build_schema(bbox_max=None, bbox_min=None):
     """Construit le schema DSL avec les bornes de bbox donnees (defaut : BBOX_MAX).
 
     Tout est reconstruit a chaque appel parce que les sous-schemas se referencent :
@@ -91,6 +132,8 @@ def build_schema(bbox_max=None):
     de 48 et y poser des coordonnees de 48. La borne doit etre coherente partout.
     """
     bornes = list(bbox_max) if bbox_max is not None else list(BBOX_MAX)
+    # Plancher par defaut 1 : sans option, le schema est exactement celui d'avant.
+    plancher = list(bbox_min) if bbox_min is not None else [1, 1, 1]
     point = _xyz_schema(bornes)
 
     # delta autorise des valeurs negatives (translation dans les deux sens) ; le clamp
@@ -106,12 +149,16 @@ def build_schema(bbox_max=None):
         "maxItems": 3,
     }
 
+    # Le PLANCHER rend le modele incapable de declarer une boite plus petite que la
+    # taille demandee, comme le plafond le rend incapable d'en declarer une plus grande.
+    # Les deux sont des garanties du schema ; une consigne dans un prompt n'en est pas
+    # une, la chaine v0 l'a prouve.
     bbox_schema = {
         "type": "array",
         "prefixItems": [
-            {"type": "integer", "minimum": 1, "maximum": bornes[0]},
-            {"type": "integer", "minimum": 1, "maximum": bornes[1]},
-            {"type": "integer", "minimum": 1, "maximum": bornes[2]},
+            {"type": "integer", "minimum": plancher[0], "maximum": bornes[0]},
+            {"type": "integer", "minimum": plancher[1], "maximum": bornes[1]},
+            {"type": "integer", "minimum": plancher[2], "maximum": bornes[2]},
         ],
         "minItems": 3,
         "maxItems": 3,

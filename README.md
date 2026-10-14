@@ -912,31 +912,63 @@ garantirait rien, le modèle déclarerait une boîte de 16 et y poserait des `bo
 jusqu'à 48. `build_schema()` reconstruit donc tout de façon cohérente — `bbox`,
 `from`/`to`, `at`, `height`, `diameter`, `delta` — et un test le verrouille.
 
-**Mesuré** sur « une petite maison aux murs creux et toit plat », 3 générations par
-taille, chaîne complète :
+#### Un plancher, pas seulement un plafond
 
-| taille | borne | bbox réellement choisi | pièces |
+Un plafond ne choisit rien. Mesuré sur « une petite maison aux murs creux et toit plat »,
+3 générations par taille : `petite` saturait sa borne, et **`grande` ne la touchait
+jamais** — le planificateur prend ce qu'il juge raisonnable pour l'objet, et son prompt
+système lui souffle par ailleurs de préférer des tailles modestes. Choisir `grande` n'avait
+donc **aucun effet observable**, et une génération en `moyenne` est même sortie à 7 pièces.
+
+Chaque taille a désormais un **plancher**, égal au plafond de la taille en dessous :
+
+| taille | plancher | plafond |
+|---|---|---|
+| `petite` | — | `[16,16,20]` |
+| `moyenne` | `[16,16,20]` | `[28,28,36]` |
+| `grande` | `[28,28,36]` | `[48,48,60]` |
+
+Les trois intervalles ne se recouvrent plus : `grande` **ne peut plus** rendre un modèle
+plus petit que `moyenne`. Comme le plafond, c'est une garantie du schéma, pas une consigne.
+Le plancher est aussi annoncé au planificateur, avec la mention explicite que la consigne
+de modestie ne s'applique pas — sinon il propose un plan que le schéma refusera, et le
+designer passe son budget de réparations à le rattraper.
+
+**Mesuré, 3 générations par taille, même prompt et mêmes seeds avant et après :**
+
+| taille | pièces avant | pièces après | emprise réelle après |
 |---|---|---|---|
-| petite | `[16,16,20]` | `[16,16,20]` aux 3 essais | 50 – 143 |
-| moyenne | `[28,28,36]` | `[24,24,30]` aux 3 essais | 65 – 241 |
-| grande | `[48,48,60]` | `[16,16,24]`, `[24,24,24]`, `[16,16,12]` | 137 – 189 |
+| `petite` | 84 – 127 | 12 – 170 | `16x16x11` |
+| `moyenne` | **7** – 254 | **239 – 372** | `20x20x13` → `24x24x13` |
+| `grande` | 86 – 169 | **452 – 707** | `40x40x13` → `48x48x13` |
 
-**0 dépassement sur 9.** La borne est respectée à chaque fois.
+Les fourchettes **ne se chevauchent plus**. Et le volume réellement construit suit : le
+plancher ne force pas seulement une déclaration, la boîte est remplie — `grande` passe
+d'une emprise de `16x16` à `40x40`–`48x48`.
 
-Deux limites à connaître, mesurées et non contournées :
+Deux choses à ne pas confondre :
 
-- **La borne est un plafond, pas une cible.** Pour `petite` elle mord — le modèle veut
-  plus grand et se fait plafonner. Pour `grande` elle ne mord jamais : le planificateur
-  choisit ce qu'il estime raisonnable pour l'objet demandé, et son prompt lui souffle
-  déjà de préférer des tailles modestes. Choisir `grande` n'a donc aujourd'hui **aucun
-  effet observable**. Pour qu'il en ait un, il faudrait un plancher en plus du plafond.
-- **Le nombre de pièces ne suit pas la taille.** Les fourchettes se chevauchent
-  largement et `grande` produit en moyenne moins de pièces que `moyenne`. Le nombre de
-  pièces dépend surtout du creux du modèle, pas de son encombrement. La garantie porte
-  sur la boîte englobante, pas sur le compte.
+- **Le nombre de pièces reste une conséquence, pas une promesse.** Il dépend surtout du
+  creux du modèle. La garantie porte sur la boîte englobante ; la fourchette ci-dessus est
+  mesurée, pas contractuelle.
+- **`petite` n'a pas de plancher**, par construction : c'est la plus petite taille. Une
+  génération y est sortie à 12 pièces, ce qui reste possible.
 
-La borne appliquée est consignée dans `report.json` (`bbox_max_applique`), pour qu'un
-résultat reste explicable après coup.
+Les deux bornes appliquées sont consignées dans `report.json` (`bbox_max_applique`,
+`bbox_min_applique`), pour qu'un résultat reste explicable après coup.
+
+#### Les formes élancées
+
+Un plafond nommé est **cubique** : un phare demandé en `--taille petite` plafonne à
+`16x16x20` et sort en gâteau. `--bbox-max XxYxZ` dit étroit **et** haut, ce que les trois
+tailles ne savent pas exprimer :
+
+```powershell
+python lego.py "Un phare blanc avec une lanterne rouge" --bbox-max 10x10x48
+```
+
+Il l'emporte sur `--taille`, et une saisie invalide échoue **net** plutôt que de générer
+silencieusement à la mauvaise échelle.
 
 ### Les formes courbes
 

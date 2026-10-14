@@ -1,3 +1,4 @@
+import itertools
 import os
 import sys
 from pathlib import Path
@@ -181,3 +182,61 @@ def test_tailles_de_lapi_et_du_schema_restent_alignees():
     cote_api = set(re.findall(r'"(\w+)"', bloc))
     assert cote_api == set(TAILLES), (
         f"server/app.py connait {sorted(cote_api)}, src/dsl_schema.py {sorted(TAILLES)}")
+
+
+# ---------- plancher de taille (US V2-03) ----------
+
+def test_sans_taille_nommee_aucun_plancher():
+    """Critere d'acceptation : sans option, le comportement est STRICTEMENT inchange."""
+    from src.dsl_schema import build_schema, resoudre_plancher
+
+    assert resoudre_plancher() == [1, 1, 1]
+    assert resoudre_plancher(None, None, [12, 12, 12]) == [1, 1, 1]
+    minima = [p["minimum"] for p in build_schema()["properties"]["bbox"]["prefixItems"]]
+    assert minima == [1, 1, 1]
+
+
+def test_les_intervalles_de_taille_ne_se_recouvrent_pas():
+    """Le plancher d'une taille est le plafond de la precedente : « grande » ne peut
+    donc plus rendre un modele plus petit que « moyenne ». Mesure qui l'a motive :
+    « grande » rendait [16,16,24], [24,24,24], [16,16,12] — jamais plus que « petite »."""
+    from src.dsl_schema import TAILLES, resoudre_bornes, resoudre_plancher
+
+    noms = list(TAILLES)
+    assert resoudre_plancher(noms[0]) == [1, 1, 1], "la plus petite n'a pas de plancher"
+    for precedent, courant in itertools.pairwise(noms):
+        assert resoudre_plancher(courant) == resoudre_bornes(precedent)
+        assert all(p <= m for p, m in
+                   zip(resoudre_plancher(courant), resoudre_bornes(courant)))
+
+
+def test_le_plancher_se_retrouve_dans_le_schema():
+    """C'est une GARANTIE : le decodage contraint doit rendre le modele incapable de
+    declarer une boite plus petite, pas seulement le lui deconseiller."""
+    from src.dsl_schema import build_schema, resoudre_bornes, resoudre_plancher
+
+    schema = build_schema(resoudre_bornes("grande"), resoudre_plancher("grande"))
+    bornes = schema["properties"]["bbox"]["prefixItems"]
+    assert [p["minimum"] for p in bornes] == [28, 28, 36]
+    assert [p["maximum"] for p in bornes] == [48, 48, 60]
+
+
+def test_un_bbox_max_plus_petit_rabote_le_plancher():
+    """Sinon le schema serait insatisfiable (minimum > maximum) et LM Studio ne
+    pourrait pas le compiler en grammaire. Cas reel : --taille grande --bbox-max petit,
+    pour une forme elancee."""
+    from src.dsl_schema import build_schema, resoudre_plancher
+
+    plancher = resoudre_plancher("grande", bbox_max=[10, 10, 60])
+    assert plancher == [10, 10, 36]
+    bornes = build_schema([10, 10, 60], plancher)["properties"]["bbox"]["prefixItems"]
+    for p in bornes:
+        assert p["minimum"] <= p["maximum"]
+
+
+def test_un_plancher_explicite_prime_sur_la_taille():
+    from src.dsl_schema import resoudre_plancher
+
+    assert resoudre_plancher("grande", bbox_min=[4, 4, 40]) == [4, 4, 40]
+    with pytest.raises(ValueError, match="bbox_min"):
+        resoudre_plancher(bbox_min=[4, 4])

@@ -8,7 +8,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from src.dsl_schema import resoudre_bornes
+from src.dsl_schema import resoudre_bornes, resoudre_plancher
 from src.llm_client import LLMCallError, call_llm
 
 PROMPTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts")
@@ -17,7 +17,8 @@ with open(os.path.join(PROMPTS_DIR, "planner_system.txt"), "r", encoding="utf-8"
     SYSTEM_PROMPT = f.read()
 
 
-def plan(user_prompt, work_dir, seed=None, taille=None, bbox_max=None):
+def plan(user_prompt, work_dir, seed=None, taille=None, bbox_max=None,
+         bbox_min=None):
     """Retourne le texte du plan et le sauvegarde dans work_dir/plan.md.
 
     taille / bbox_max : la borne est AUSSI rappelee au planificateur, pas seulement
@@ -29,9 +30,19 @@ def plan(user_prompt, work_dir, seed=None, taille=None, bbox_max=None):
     message = user_prompt
     if taille is not None or bbox_max is not None:
         bx, by, bz = resoudre_bornes(taille, bbox_max)
-        message = (f"{user_prompt}\n\n"
-                   f"Contrainte de taille imperative : la boite englobante ne doit pas "
-                   f"depasser {bx} tenons (X) x {by} tenons (Y) x {bz} plates (Z).")
+        px, py, pz = resoudre_plancher(taille, bbox_min, bbox_max)
+        contrainte = (f"Contrainte de taille imperative : la boite englobante ne doit "
+                      f"pas depasser {bx} tenons (X) x {by} tenons (Y) x {bz} plates (Z).")
+        if max(px, py, pz) > 1:
+            # Le plancher doit etre dit AU PLANIFICATEUR, pas seulement impose au
+            # designer : son prompt systeme lui souffle de preferer des tailles modestes,
+            # et un plan trop petit ferait passer au designer son budget de reparations a
+            # rattraper une boite que le schema refuse. Symetrique exact du plafond, pour
+            # la meme raison.
+            contrainte += (f" Elle doit aussi mesurer AU MOINS {px} x {py} x {pz} : la "
+                           f"consigne de preferer des tailles modestes ne s'applique pas "
+                           f"ici, l'utilisateur a demande cette echelle explicitement.")
+        message = f"{user_prompt}\n\n{contrainte}"
 
     content, _metadata = call_llm(
         SYSTEM_PROMPT,

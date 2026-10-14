@@ -118,8 +118,20 @@ INCAPABLE d'émettre une coordonnée aberrante ou une couleur hors palette. Ne p
 relâcher sans mesurer l'effet avec le harnais.
 
 La taille demandée (--taille / bbox_max) est une GARANTIE par le schéma, pas une
-consigne : build_schema() resserre bbox ET coordonnées. Mais c'est un PLAFOND, pas une
-cible, et choisir `grande` n'a aucun effet observable. Chiffres : docs/mesures.md.
+consigne : build_schema() resserre bbox ET coordonnées.
+  INTERVALLE, plus seulement plafond. Une taille nommée impose aussi un PLANCHER
+  (dsl_schema.PLANCHERS), égal au plafond de la taille en dessous : les trois
+  intervalles ne se recouvrent donc pas et `grande` ne peut plus rendre un modèle plus
+  petit que `moyenne`. Avant ce plancher, choisir `grande` n'avait aucun effet
+  observable — mesuré. Le plancher est DÉRIVÉ de TAILLES, ne pas le recopier.
+  Il est aussi annoncé au planificateur, avec la mention que son « prefer modest sizes »
+  ne s'applique pas : sinon il produit un plan que le schéma refuse et le designer brûle
+  ses réparations à le rattraper. Symétrique exact du plafond, pour la même raison.
+  `petite` n'a PAS de plancher, c'est la plus petite — une génération à 12 pièces y
+  reste possible.
+  Les formes ÉLANCÉES ne passent pas par les tailles nommées, dont le plafond est
+  cubique : `--bbox-max 10x10x48` au CLI. Vérifié sur un phare, 4x4x48 réellement
+  construit, rapport 12:1. Chiffres : docs/mesures.md.
 
 Règles de validation (src/validator.py)
 

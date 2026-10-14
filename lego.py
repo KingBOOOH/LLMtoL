@@ -21,7 +21,7 @@ sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 import pipeline
 from src.bom import write_bom
-from src.dsl_schema import TAILLES
+from src.dsl_schema import TAILLES, resoudre_bornes
 from src.instructions import compose_all_steps, vignette_piece, write_notice_html
 from src.llm_client import LLMCallError
 from src.pdf import write_pdf
@@ -39,7 +39,29 @@ def _nom_de_dossier(prompt):
     return "".join(garde).strip("_").replace("__", "_") or "modele"
 
 
-def generer(prompt, run_dir, iterations=1, taille=None, avec_notice=True):
+def analyser_bbox_max(texte):
+    """\"10x10x48\" -> [10, 10, 48]. None si rien n'est demande.
+
+    Echec NET sur une saisie invalide : une borne mal lue genererait silencieusement a
+    la mauvaise echelle, et l'utilisateur ne verrait le probleme qu'au rendu.
+    """
+    if not texte:
+        return None
+    morceaux = texte.lower().replace("*", "x").split("x")
+    if len(morceaux) != 3:
+        raise SystemExit(f"--bbox-max attend XxYxZ, recu {texte!r} (ex. 10x10x48)")
+    try:
+        valeurs = [int(m) for m in morceaux]
+    except ValueError:
+        raise SystemExit(f"--bbox-max attend trois entiers, recu {texte!r}") from None
+    try:
+        return resoudre_bornes(None, valeurs)
+    except ValueError as e:
+        raise SystemExit(f"--bbox-max : {e}") from None
+
+
+def generer(prompt, run_dir, iterations=1, taille=None, avec_notice=True,
+            bbox_max=None):
     """Genere `iterations` modeles dans run_dir. Retourne (dossiers_produits, echecs).
 
     Une iteration qui echoue est journalisee et n'interrompt PAS les suivantes : le
@@ -57,7 +79,8 @@ def generer(prompt, run_dir, iterations=1, taille=None, avec_notice=True):
         if iterations > 1:
             print(f"\n=== iteration {i}/{iterations} ===")
         try:
-            result = pipeline.generer_modele(prompt, iter_dir, log_path, taille=taille)
+            result = pipeline.generer_modele(prompt, iter_dir, log_path, taille=taille,
+                                             bbox_max=bbox_max)
         except (LLMCallError, RuntimeError) as e:
             pipeline.log_line(log_path, f"ECHEC : {e}")
             echecs.append((i, str(e)))
@@ -110,6 +133,8 @@ def main():
     parser.add_argument("prompt", help="ce qu'on veut construire, en francais")
     parser.add_argument("--taille", choices=sorted(TAILLES),
                         help="borne la taille du modele (garantie par le schema DSL)")
+    parser.add_argument("--bbox-max", metavar="XxYxZ",
+                        help="borne exacte, ex. 10x10x48 pour une forme elancee ; l'emporte sur --taille")
     parser.add_argument("--iterations", type=int, default=1,
                         help="nombre de variantes a produire (defaut 1)")
     parser.add_argument("--sans-notice", action="store_true",
@@ -120,6 +145,11 @@ def main():
 
     if args.iterations < 1:
         raise SystemExit("--iterations doit valoir au moins 1")
+
+    # Une forme elancee ne tient pas dans un plafond cubique : un phare demande en
+    # --taille petite plafonne a 16x16x20 et sort en gateau. --bbox-max permet de dire
+    # etroit ET haut, ce que les trois tailles nommees ne savent pas exprimer.
+    bornes_demandees = analyser_bbox_max(args.bbox_max)
 
     # Avant de depenser la moindre generation : LM Studio reinjecte le System Prompt et
     # le Structured Output configures sur le modele des qu'une requete n'envoie pas son
@@ -139,7 +169,8 @@ def main():
 
     t0 = time.time()
     produits, echecs = generer(args.prompt, run_dir, iterations=args.iterations,
-                               taille=args.taille, avec_notice=not args.sans_notice)
+                               taille=args.taille, avec_notice=not args.sans_notice,
+                               bbox_max=bornes_demandees)
     duree = time.time() - t0
 
     reussites = len(produits)

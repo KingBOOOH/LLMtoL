@@ -14,7 +14,12 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.compiler import compile_design
-from src.dsl_schema import build_schema, resoudre_bornes, validate_design
+from src.dsl_schema import (
+    build_schema,
+    resoudre_bornes,
+    resoudre_plancher,
+    validate_design,
+)
 from src.llm_client import LLMCallError, call_llm
 from src.tiler import tile
 from src.validator import validate
@@ -86,21 +91,25 @@ def _format_repair_message(errors, warnings):
     return "\n".join(lines)
 
 
-def design(user_prompt, plan_text, work_dir, seed=None, taille=None, bbox_max=None):
+def design(user_prompt, plan_text, work_dir, seed=None, taille=None, bbox_max=None,
+           bbox_min=None):
     """Genere un design DSL, le compile, le pave, le valide ; repare jusqu'a
     MAX_REPAIRS fois sur echec (JSON/schema invalide ou erreurs bloquantes du
     validateur). Retourne {"design", "voxels", "placements", "report", "repairs_used"}.
 
-    taille / bbox_max resserrent les bornes du schema envoye au modele. C'est une
-    garantie et non une consigne : le decodage contraint rend le modele INCAPABLE
-    d'emettre une coordonnee hors bornes. La borne appliquee est consignee dans
-    report.json pour que le resultat reste rejouable.
+    taille / bbox_max resserrent les bornes du schema envoye au modele, et une taille
+    nommee impose EN PLUS un plancher (voir dsl_schema.PLANCHERS) : sans lui, "grande"
+    rendait regulierement un modele plus petit que "petite". C'est une garantie et non
+    une consigne : le decodage contraint rend le modele INCAPABLE de declarer une boite
+    hors de l'intervalle. Les deux bornes appliquees sont consignees dans report.json
+    pour que le resultat reste rejouable.
 
     Leve LLMCallError (reseau, gere par call_llm) ou RuntimeError (echec apres
     reparations, error.txt ecrit dans work_dir) sinon.
     """
     bornes = resoudre_bornes(taille, bbox_max)
-    schema = build_schema(bornes)
+    plancher = resoudre_plancher(taille, bbox_min, bbox_max)
+    schema = build_schema(bornes, plancher)
     user_message = f"{user_prompt}\n\nPlan :\n{plan_text}"
     extra_messages = list(_FEWSHOT_MESSAGES)
     last_report = None
@@ -137,6 +146,7 @@ def design(user_prompt, plan_text, work_dir, seed=None, taille=None, bbox_max=No
             # Rejouabilite : sans cette trace, impossible de savoir plus tard a quelle
             # echelle le modele a ete contraint.
             report["bbox_max_applique"] = bornes
+            report["bbox_min_applique"] = plancher
             report["taille_demandee"] = taille
             with open(os.path.join(work_dir, "design.json"), "w", encoding="utf-8") as f:
                 json.dump(parsed, f, indent=2)

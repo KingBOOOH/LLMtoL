@@ -575,3 +575,45 @@ entiers — **aucune vignette n'était embarquée**, donc le principal poste de 
 absent des deux colonnes. Le ratio paraissait bon, la mesure ne valait rien. Repère pour
 la prochaine fois : le « avant » reconstruit doit coller au PDF réel sur disque (14,52 Mo
 ici), sinon la reconstruction est incomplète.
+
+## Taille demandée : un plancher, pas seulement un plafond (US V2-03, issue #18)
+
+3 générations par taille, même prompt (« une petite maison aux murs creux et toit plat »)
+et **mêmes seeds** avant et après : seule la contrainte de taille change.
+
+| taille | pièces avant | pièces après | emprise réelle après |
+|---|---|---|---|
+| `petite` | 84 – 127 | 12 – 170 | `16x16x11` |
+| `moyenne` | **7** – 254 | **239 – 372** | `20x20x13` → `24x24x13` |
+| `grande` | 86 – 169 | **452 – 707** | `40x40x13` → `48x48x13` |
+
+Les fourchettes **ne se chevauchent plus**. Avant, `grande` rendait `16x16x24`,
+`16x16x21`, `16x16x21` — moins que le plafond de `petite` — et une génération en
+`moyenne` est sortie à `8x6x4`, soit 7 pièces.
+
+**Le volume réellement construit suit, ce qui n'était pas acquis.** Un plancher force une
+*déclaration* ; rien n'oblige le modèle à remplir sa boîte. Mesure faite sur le volume
+occupé et pas sur le bbox déclaré, précisément pour pouvoir répondre : `grande` passe
+d'une emprise de `16x16` à `40x40`–`48x48`.
+
+### Pourquoi le plafond seul ne suffisait pas
+
+Le planificateur ne recevait qu'un plafond (« ne doit pas dépasser »), pendant que son
+prompt système lui souffle de *préférer des tailles modestes*. Les deux combinés donnent
+le résultat mesuré : la borne haute ne mord jamais. Le plancher lui est donc annoncé
+aussi, avec la mention explicite que la consigne de modestie ne s'applique pas — sinon il
+propose un plan que le schéma refusera, et le designer brûle ses réparations à le
+rattraper.
+
+### Formes élancées
+
+Un plafond nommé est cubique. `--bbox-max 10x10x48` sur « un phare blanc étroit avec une
+lanterne rouge au sommet » : **`4x4x48` réellement construit, rapport 12:1**, 73 pièces,
+score 83,2, zéro réparation, deux `cylinder`. Vérifié au rendu.
+
+### Un échec sur neuf dans la campagne « avant », et il est de moi
+
+`moyenne` seed 103 a échoué sur `Erreur API : 400 — Context`. J'avais lancé un essai du
+nouveau `--bbox-max` **pendant** la campagne : le modèle n'a que 4096 jetons de contexte
+pour 4 emplacements parallèles, et deux requêtes simultanées le font déborder. Ce n'est
+pas une donnée, c'est une interférence. Ne pas générer pendant une campagne de mesure.
