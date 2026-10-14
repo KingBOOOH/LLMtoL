@@ -19,6 +19,7 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 from src.bom import build_bom
+from src.instructions import chemin_image_etape
 from src.validator import resume_constructibilite
 
 A_PROPOS = """\
@@ -111,9 +112,7 @@ def construire_html(etapes, dossiers, placements, base, model_name="modele",
     # --- etapes ---
     blocs = []
     for i, (etape, dossier) in enumerate(zip(etapes, dossiers), 1):
-        image = os.path.join(dossier, "etape.png") if dossier else ""
-        if dossier and not os.path.isfile(image):
-            image = os.path.join(dossier, f"render_{vue}.png")
+        image = chemin_image_etape(dossier, vue)
 
         pieces = {}
         for p in etape:

@@ -22,6 +22,22 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.ldraw_writer import write_ldr
 from src.validator import resume_constructibilite
 
+# L'image d'etape est en JPEG, et c'est tout le poids de la notice PDF. Mesure sur un
+# rendu reel de 800x800 : PNG 398 ko, JPEG qualite 92 a RESOLUTION IDENTIQUE 22 ko, soit
+# 18x moins. Un rendu Blender est une image photographique (degrades, anticrenelage), le
+# pire cas pour la compression sans perte de PNG et le cas nominal pour JPEG. On ne
+# reduit PAS la definition : c'est elle qui tient la qualite d'impression, et elle ne
+# coute presque rien une fois le bon format choisi.
+NOM_IMAGE_ETAPE = "etape.jpg"
+QUALITE_JPEG = 92
+# Vignette de piece pour la liste des pieces : affichee en 42 px de cote, soit environ
+# 131 px a 300 DPI. 160 laisse de la marge a l'impression sans payer le plein format.
+NOM_VIGNETTE = "vignette.jpg"
+TAILLE_VIGNETTE = 160
+# Les notices produites avant ce changement ont un etape.png a cote : on le relit plutot
+# que de leur faire perdre l'encart des pieces a la regeneration.
+NOM_IMAGE_ETAPE_LEGACY = "etape.png"
+
 PIECES_PAR_ETAPE = int(os.environ.get("LEGO_PIECES_PAR_ETAPE", "8"))
 # Si l'utilisateur fixe la variable, son choix prime et le regroupement automatique est
 # desactive : on ne discute pas une consigne explicite.
@@ -97,6 +113,69 @@ def write_piece_models(etapes, pieces_dir):
     return modeles
 
 
+def vignette_piece(dossier, vue="iso"):
+    """Petite image d'une piece pour la liste des pieces, ou "" si le rendu manque.
+
+    La notice PDF affiche ces vignettes en 42 px de cote (img.vign dans src/pdf.py) et
+    les embarquait en 800x800 : 360 fois plus de pixels que necessaire, et de loin le
+    premier poste de poids du PDF — 32 vignettes pesaient 20,1 Mo sur un modele de 134
+    pieces, contre 7,4 Mo pour les 17 images d'etape.
+
+    TAILLE_VIGNETTE est dimensionnee pour l'IMPRESSION, pas pour l'ecran : 42 px CSS
+    font environ 131 px a 300 DPI. On garde de la marge sans payer le plein format.
+
+    La vignette est ecrite a cote du rendu et reutilisee si elle existe deja.
+    """
+    if not dossier:
+        return ""
+    source = os.path.join(dossier, f"render_{vue}.png")
+    if not os.path.isfile(source):
+        return ""
+    cible = os.path.join(dossier, NOM_VIGNETTE)
+    if os.path.isfile(cible):
+        return cible
+    try:
+        from PIL import Image
+
+        im = Image.open(source).convert("RGB")
+        im.thumbnail((TAILLE_VIGNETTE, TAILLE_VIGNETTE), Image.LANCZOS)
+        im.save(cible, "JPEG", quality=QUALITE_JPEG, optimize=True)
+        return cible
+    except OSError:
+        # Une vignette ratee ne doit pas faire echouer une notice : on sert le rendu
+        # plein format, qui est lourd mais juste.
+        return source
+
+
+def _enregistrer(image, out_path):
+    """Ecrit l'image, en JPEG si l'extension le demande (voir QUALITE_JPEG)."""
+    if out_path.lower().endswith((".jpg", ".jpeg")):
+        image.save(out_path, "JPEG", quality=QUALITE_JPEG, optimize=True)
+    else:
+        image.save(out_path)
+
+
+def chemin_image_etape(dossier, vue="iso"):
+    """Image a afficher pour une etape, ou "" si aucune n'existe.
+
+    Trois candidats dans l'ordre : l'image composee du jour, celle des notices
+    anterieures au passage en JPEG, puis le rendu brut — ce dernier n'a pas l'encart
+    des pieces, mais une notice amputee d'un encart reste utilisable, alors qu'une
+    image manquante laisse un cadre casse en pleine page.
+
+    Vit ici et pas en double dans src/pdf.py : les deux generateurs de notice doivent
+    tomber sur la meme image, sinon le HTML et le PDF divergent sans que rien ne le
+    signale.
+    """
+    if not dossier:
+        return ""
+    for nom in (NOM_IMAGE_ETAPE, NOM_IMAGE_ETAPE_LEGACY, f"render_{vue}.png"):
+        chemin = os.path.join(dossier, nom)
+        if os.path.isfile(chemin):
+            return chemin
+    return ""
+
+
 def compose_step_image(step_render, piece_images, out_path, largeur_encart=0.16):
     """Compose l'image finale d'une etape : assemblage + encart des pieces en haut a droite.
 
@@ -114,7 +193,7 @@ def compose_step_image(step_render, piece_images, out_path, largeur_encart=0.16)
 
     vignettes = [(p, n) for p, n in piece_images if os.path.isfile(p)]
     if not vignettes:
-        base.save(out_path)
+        _enregistrer(base, out_path)
         return True
 
     # Grille au plus proche du carre : evite une colonne unique tres haute comme une
@@ -170,7 +249,7 @@ def compose_step_image(step_render, piece_images, out_path, largeur_encart=0.16)
 
     # Colle avec son canal alpha : les zones sans piece laissent voir l'assemblage.
     base.paste(encart, (W - box_w - marge, marge), encart)
-    base.save(out_path)
+    _enregistrer(base, out_path)
     return True
 
 
@@ -190,7 +269,7 @@ def compose_all_steps(etapes, etape_dirs, piece_models, vue="iso"):
                      if cle in piece_models]
 
         if compose_step_image(os.path.join(dossier, f"render_{vue}.png"),
-                              vignettes, os.path.join(dossier, "etape.png")):
+                              vignettes, os.path.join(dossier, NOM_IMAGE_ETAPE)):
             faites += 1
     return faites
 
@@ -257,13 +336,9 @@ def write_notice_html(etapes, dossiers, path, model_name="modele", vue="iso",
 
     blocs = []
     for i, (etape, dossier) in enumerate(zip(etapes, dossiers), 1):
-        # etape.png = assemblage + encart des pieces ; on retombe sur le rendu brut
-        # si la composition n'a pas eu lieu (rendus sautes sur un gros modele).
-        image = os.path.join(dossier, "etape.png") if dossier else ""
-        if not os.path.isfile(image) and dossier:
-            image = os.path.join(dossier, f"render_{vue}.png")
+        image = chemin_image_etape(dossier, vue)
         rel = os.path.relpath(image, base).replace(os.sep, "/") if image else ""
-        dispo = bool(image) and os.path.isfile(image)
+        dispo = bool(image)
 
         pieces = {}
         for p in etape:

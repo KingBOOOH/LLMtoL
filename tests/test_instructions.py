@@ -323,3 +323,81 @@ def test_encart_rendu_manquant_signale(tmp_path):
     from src.instructions import compose_step_image
 
     assert compose_step_image(str(tmp_path / "inexistant.png"), [], str(tmp_path / "o.png")) is False
+
+
+# ---------- poids des images de la notice (US V2-07) ----------
+
+def test_l_image_d_etape_sort_en_jpeg_a_definition_intacte(tmp_path):
+    """Ce qui pesait dans le PDF, c'etait le FORMAT, pas la definition.
+
+    Mesure sur un rendu reel de 800x800 : PNG 398 ko, JPEG qualite 92 a resolution
+    identique 22 ko. Un rendu Blender est photographique — le pire cas pour PNG. On ne
+    doit donc PAS reduire la definition : c'est elle qui tient la qualite d'impression.
+    """
+    from PIL import Image
+
+    from src.instructions import NOM_IMAGE_ETAPE, compose_step_image
+
+    rendu = tmp_path / "render_iso.png"
+    Image.new("RGB", (800, 800), (43, 45, 51)).save(rendu)
+    sortie = tmp_path / NOM_IMAGE_ETAPE
+
+    assert compose_step_image(str(rendu), [], str(sortie)) is True
+    with Image.open(sortie) as im:
+        assert im.format == "JPEG"
+        assert im.size == (800, 800), "la definition ne doit pas bouger"
+
+
+def test_la_vignette_de_piece_est_reduite_et_reutilisee(tmp_path):
+    """Les vignettes etaient le premier poste de poids : 32 images de 800x800, soit
+    20,1 Mo, pour etre affichees en 42 px de cote (img.vign dans src/pdf.py)."""
+    from PIL import Image
+
+    from src.instructions import NOM_VIGNETTE, TAILLE_VIGNETTE, vignette_piece
+
+    Image.new("RGB", (800, 800), (120, 120, 120)).save(tmp_path / "render_iso.png")
+
+    chemin = vignette_piece(str(tmp_path))
+    assert os.path.basename(chemin) == NOM_VIGNETTE
+    with Image.open(chemin) as im:
+        assert im.format == "JPEG"
+        assert max(im.size) <= TAILLE_VIGNETTE
+
+    avant = os.path.getmtime(chemin)
+    assert vignette_piece(str(tmp_path)) == chemin, "deja la : on ne la refait pas"
+    assert os.path.getmtime(chemin) == avant
+
+
+def test_sans_rendu_la_vignette_ne_fabrique_rien(tmp_path):
+    """Un dossier sans rendu ne doit pas lever : la liste des pieces s'affiche sans
+    vignette, ce qui reste utilisable."""
+    from src.instructions import vignette_piece
+
+    assert vignette_piece(str(tmp_path)) == ""
+    assert vignette_piece("") == ""
+
+
+def test_l_image_d_etape_retombe_sur_les_anciens_fichiers(tmp_path):
+    """Les notices d'avant ce changement ont un etape.png : une regeneration ne doit
+    pas leur faire perdre l'encart des pieces en repartant du rendu brut."""
+    from PIL import Image
+
+    from src.instructions import (
+        NOM_IMAGE_ETAPE,
+        NOM_IMAGE_ETAPE_LEGACY,
+        chemin_image_etape,
+    )
+
+    assert chemin_image_etape(str(tmp_path)) == "", "rien sur disque, rien a afficher"
+
+    brut = tmp_path / "render_iso.png"
+    Image.new("RGB", (10, 10), (0, 0, 0)).save(brut)
+    assert chemin_image_etape(str(tmp_path)) == str(brut)
+
+    legacy = tmp_path / NOM_IMAGE_ETAPE_LEGACY
+    Image.new("RGB", (10, 10), (1, 1, 1)).save(legacy)
+    assert chemin_image_etape(str(tmp_path)) == str(legacy), "l'ancienne prime sur le brut"
+
+    neuve = tmp_path / NOM_IMAGE_ETAPE
+    Image.new("RGB", (10, 10), (2, 2, 2)).save(neuve)
+    assert chemin_image_etape(str(tmp_path)) == str(neuve), "la nouvelle prime sur tout"

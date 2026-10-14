@@ -22,7 +22,7 @@ sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 import pipeline
 from src.bom import write_bom
 from src.dsl_schema import TAILLES
-from src.instructions import compose_all_steps, write_notice_html
+from src.instructions import compose_all_steps, vignette_piece, write_notice_html
 from src.llm_client import LLMCallError
 from src.pdf import write_pdf
 
@@ -87,7 +87,7 @@ def generer(prompt, run_dir, iterations=1, taille=None, avec_notice=True):
         images = {}
         if etape_dirs:
             compose_all_steps(etapes, etape_dirs, piece_models)
-            images = {c: os.path.join(d, "render_iso.png") for c, d in piece_models.items()}
+            images = {c: vignette_piece(d) for c, d in piece_models.items()}
             write_bom(result["placements"], iter_dir, result["nom"], piece_images=images)
         write_notice_html(etapes, etape_dirs or [""] * len(etapes),
                           os.path.join(iter_dir, "notice.html"), result["nom"],

@@ -528,3 +528,50 @@ Une moyenne qui mélange les quatre ne veut rien dire.
 | `prim_sphere_libre` | construction d'une sphère |
 | `prim_cylindre` | obéissance à une **description** imposée |
 | `prim_cylindre_libre` | construction d'un cylindre |
+
+## Poids du PDF de notice (US V2-07, issue #22)
+
+Modèle de 134 pièces, 17 étapes, 37 références. Pixels identiques dans les deux
+colonnes pour les images d'étape : seul l'encodage change.
+
+| | avant | après |
+|---|---|---|
+| PDF | **15,17 Mo** | **1,12 Mo** |
+| images embarquées | 28,17 Mo | 1,24 Mo |
+| temps de génération | 5,7 s | 1,1 s |
+
+13,6× plus léger, 5× plus rapide. Critère de l'issue (moins de 3 Mo sur ~150 pièces) :
+atteint avec une marge de 2,7×.
+
+### Où pesait le PDF, mesuré avant de corriger
+
+| | images | poids |
+|---|---|---|
+| vignettes de pièces | 32 | **20,11 Mo** |
+| images d'étape | 17 | 7,35 Mo |
+| couverture | 1 | 0,71 Mo |
+
+Le coupable n'était pas celui que l'issue désignait. Les vignettes étaient rendues en
+800×800 pour un affichage en **42 px** (`img.vign` dans `src/pdf.py`), soit 360 fois
+trop de pixels. Réduites à 160 px — dimensionnés pour l'impression, 42 px CSS valant
+environ 131 px à 300 DPI.
+
+### PNG contre JPEG sur un rendu Blender, à définition égale
+
+| 800×800 | PNG | JPEG q92 | JPEG q85 |
+|---|---|---|---|
+| poids | 398 ko | **22 ko** | 16 ko |
+
+Un rendu Blender est photographique : dégradés et anticrénelage, le pire cas pour la
+compression sans perte. Les images d'étape **gardent donc leur définition** — elles
+s'affichent à 95 mm où 800 px se justifient — et ne changent que de format. Réduire leur
+taille aurait dégradé l'impression pour un gain marginal une fois le bon format choisi.
+
+### Ce qui a failli fausser la mesure
+
+Première tentative : 6,00 Mo « avant » au lieu de 15,17. `src/pdf.py` indexe les
+vignettes par `(ldraw_id, color_index)` et le script de mesure passait des index
+entiers — **aucune vignette n'était embarquée**, donc le principal poste de poids était
+absent des deux colonnes. Le ratio paraissait bon, la mesure ne valait rien. Repère pour
+la prochaine fois : le « avant » reconstruit doit coller au PDF réel sur disque (14,52 Mo
+ici), sinon la reconstruction est incomplète.

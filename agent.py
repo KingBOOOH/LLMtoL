@@ -38,7 +38,7 @@ from sqlalchemy import select, text
 import config
 import pipeline
 from server.db import AGENT_TIMEOUT_S, Job, Session, Variante, assurer_schema
-from src.instructions import compose_all_steps, write_notice_html
+from src.instructions import compose_all_steps, vignette_piece, write_notice_html
 from src.llm_client import LLMCallError
 from src.pdf import write_pdf
 
@@ -396,8 +396,7 @@ def finir(session, job):
         compose_all_steps(etapes, etape_dirs, piece_models)
 
         from src.bom import write_bom
-        images_pieces = {cle: os.path.join(d, "render_iso.png")
-                         for cle, d in piece_models.items()}
+        images_pieces = {cle: vignette_piece(d) for cle, d in piece_models.items()}
         write_bom(placements, iter_dir, retenue.name or "modele",
                   piece_images=images_pieces)
 

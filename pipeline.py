@@ -37,6 +37,7 @@ from src.bom import write_bom
 from src.designer import design as make_design
 from src.instructions import (
     compose_all_steps,
+    vignette_piece,
     write_notice_html,
     write_piece_models,
     write_step_models,
@@ -334,7 +335,7 @@ def main():
             composees = compose_all_steps(etapes, etape_dirs, piece_models)
             print(f"Images d'etapes composees : {composees}/{len(etapes)}")
         # Nomenclature reecrite avec les vignettes, maintenant qu'elles existent.
-        images = {cle: os.path.join(d, "render_iso.png") for cle, d in piece_models.items()}
+        images = {cle: vignette_piece(d) for cle, d in piece_models.items()}
         write_bom(placements, iter_dir, nom, piece_images=images)
         n = write_notice_html(etapes, etape_dirs or [""] * len(etapes),
                               os.path.join(iter_dir, "notice.html"), nom,

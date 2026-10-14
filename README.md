@@ -790,6 +790,46 @@ Les 357 s sont le vrai coût d'une notice de gros modèle. Ils se règlent par
 `LEGO_NOTICE_MAX_ETAPES` : baisser le plafond réduit proportionnellement le nombre de
 rendus.
 
+#### Le poids du PDF : c'était le format, pas la définition
+
+Un PDF de notice pesait **14 à 34 Mo**, difficile à envoyer et inutile à imprimer. La
+mesure, sur un modèle de 134 pièces, a désigné un coupable inattendu :
+
+| | images | poids |
+|---|---|---|
+| **vignettes de pièces** | 32 | **20,1 Mo** |
+| images d'étape | 17 | 7,4 Mo |
+| couverture | 1 | 0,7 Mo |
+
+Les vignettes étaient rendues en **800×800 pour être affichées en 42 px** — 360 fois plus
+de pixels que nécessaire. Elles sont désormais réduites à 160 px, dimensionnés pour
+l'impression (42 px CSS ≈ 131 px à 300 DPI) et non pour l'écran.
+
+Les images d'étape, elles, **gardent leur définition** : elles s'affichent à 95 mm, où
+800 px se justifient. Seul leur format change. Un rendu Blender est une image
+photographique — dégradés, anticrénelage — c'est-à-dire le pire cas pour la compression
+sans perte de PNG et le cas nominal pour JPEG :
+
+| même image, 800×800 | poids |
+|---|---|
+| PNG | 398 ko |
+| **JPEG qualité 92** | **22 ko** |
+
+Résultat mesuré sur le même modèle, à pixels identiques :
+
+| | avant | après |
+|---|---|---|
+| PDF | 15,17 Mo | **1,12 Mo** |
+| images embarquées | 28,17 Mo | 1,24 Mo |
+| temps de génération | 5,7 s | **1,1 s** |
+
+**13,6× plus léger et 5× plus rapide**, sans toucher à la définition des images d'étape.
+Vérifié à l'œil sur les deux types d'image : aucun artefact visible, les tenons et les
+quantités de l'encart restent nets.
+
+Les notices produites avant ce changement gardent leur `etape.png` ; une régénération le
+relit plutôt que de repartir du rendu brut, qui n'a pas l'encart des pièces.
+
 ### Savoir si le modèle tient debout
 
 Le validateur calcule déjà tout — composantes connexes, pièces sans support, contact au
