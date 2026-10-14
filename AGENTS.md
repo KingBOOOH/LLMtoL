@@ -361,8 +361,26 @@ Priorité 2 : RÉSOLUE, et la décision est prise.
   construit moins bien que l'op, voire moins bien qu'une boîte posée bêtement.
 
 Priorité 3 :
-  LPub3D n'a jamais été évalué avant d'écrire src/instructions.py (le plan le demandait).
-  À faire si la notice doit progresser sérieusement.
+  LPub3D n'avait jamais été évalué avant d'écrire src/instructions.py (le plan le
+  demandait). ÉVALUATION SUR DOSSIER FAITE, essai pratique NON FAIT — il n'est pas
+  installé sur la machine, et l'installer est une décision de l'utilisateur.
+  Ce qui est vérifié : LPub3D a un mode console/batch ET un mode headless sur Windows,
+  Linux et macOS ; il lit nativement le LDR, donc nos model.ldr sans conversion ; il
+  exporte en PDF/PNG/JPG/BMP ; son rendu passe par LDView. Il est donc SCRIPTABLE, ce
+  qui est la seule question bloquante pour un projet qui tourne aussi en conteneur.
+  Ce qui n'est PAS vérifié : les options exactes de ligne de commande. Les sources
+  publiques ne les donnent pas ; il faut un `lpub3d --help` sur une installation. Un
+  fil LDraw de 2022 dit l'export PNG par page réservé à l'interface graphique — daté,
+  à ne pas prendre pour argent comptant.
+  Ce qu'il remplacerait : le découpage en étapes, le rendu des étapes ET la mise en
+  page, soit l'essentiel de src/instructions.py. Ce qu'il coûterait : un binaire de
+  plus dans l'image conteneur comme sur l'hôte (LDView compris), et la perte du
+  contrôle sur l'allure de la notice, que LPub3D impose.
+  DÉCISION : on n'y touche pas tant que la notice n'est pas un sujet. Elle marche et
+  elle est mesurée (40 étapes sur un plafond de 40, 40 images sur 40, 357 s de rendu).
+  Le coût de ne rien faire est faible : on entretient 347 lignes sans savoir si un
+  outil mûr fait mieux. Le jour où la notice devient prioritaire, l'essai tient en une
+  heure — installer, lui donner un model.ldr, comparer.
 
 Organisation des outputs
 
