@@ -511,3 +511,20 @@ Les designs écrits sous l'ancienne convention (bbox de 7 plates pour une sphèr
 tenons) débordent désormais : ils tombent de 1,000 à 0,338, avec un avertissement
 `depasse la grille` — rogné bruyamment, jamais en silence. Toute comparaison d'IoU sur
 `prim_sphere` d'avant et d'après cette date est invalide.
+
+### Le 11e cas : `prim_cylindre_libre`
+
+Mesure refaite avec la configuration du jour — le prompt du planificateur ayant changé
+entre-temps pour la sphère, l'ancienne mesure ne pouvait plus justifier un ajout au jeu
+figé. Confirmé : **3/3 d'adoption, IoU 1,000, zéro débordement**, bbox `[9, 9, 4]`.
+
+Le jeu contient donc quatre cas pour deux formes. Les deux cas figés mesurent
+l'obéissance à une consigne de forme, les deux cas « libre » mesurent la construction.
+Une moyenne qui mélange les quatre ne veut rien dire.
+
+| cas | ce qu'il mesure |
+|---|---|
+| `prim_sphere` | obéissance à une **recette** imposée |
+| `prim_sphere_libre` | construction d'une sphère |
+| `prim_cylindre` | obéissance à une **description** imposée |
+| `prim_cylindre_libre` | construction d'un cylindre |

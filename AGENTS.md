@@ -86,7 +86,7 @@ tools/recover_eval.py     reconstruit un CSV depuis les design.json survivants
 
 eval/run_eval.py             harnais, avec --resume et --compare
 eval/testset.json            20 prompts sémantiques figés
-eval/primitives_testset.json 10 formes primitives, avec référence calculable
+eval/primitives_testset.json 11 formes primitives, avec référence calculable
 
 Codex doit confirmer les fichiers réellement présents avant de modifier quoi que ce soit.
 

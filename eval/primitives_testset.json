@@ -30,6 +30,11 @@
     "reference": {"shape": "cylinder", "params": {"diameter": 9, "height": 4}}
   },
   {
+    "id": "prim_cylindre_libre", "category": "courbe", "complexity": "moyen",
+    "prompt": "Un cylindre plein de 9 tenons de diametre et 4 plates de haut.",
+    "reference": {"shape": "cylinder", "params": {"diameter": 9, "height": 4}}
+  },
+  {
     "id": "prim_sphere", "category": "courbe", "complexity": "detaille",
     "prompt": "Une sphere pleine de 7 tenons de diametre : chaque couche horizontale est un disque, le plus large au milieu, retrecissant vers le haut et vers le bas.",
     "reference": {"shape": "sphere", "params": {"diameter": 7}}
