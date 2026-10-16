@@ -8,6 +8,17 @@ vivent ici, en fonctions pures, et server/app.py se contente de traduire leur re
 en code HTTP.
 """
 
+
+# RECOPIE de src.dsl_schema.BBOX_MAX, et surtout PAS importee : l'image de l'API ne
+# contient que server/ (voir Dockerfile.api) et n'a ni src/ ni numpy. Un import ici
+# ferait planter le conteneur au demarrage, pas au premier appel.
+#
+# La duplication est donc imposee par le deploiement, pas choisie. Ce qui la rend sure
+# est un test : tests/test_server.py verifie que les deux valeurs sont egales, et
+# echoue des qu'elles divergent. La verification tourne sur l'hote, ou les deux modules
+# sont importables.
+BBOX_MAX = [48, 48, 60]
+
 # Un job dans un de ces etats a encore quelque chose devant lui : ni relance ni
 # regeneration ne doivent s'y superposer, sinon deux traitements se disputeraient le
 # meme dossier de sortie.
@@ -60,6 +71,40 @@ def verifier_n_variantes(valeur, defaut):
         return None, (f"n_variantes doit être entre {N_VARIANTES_MIN} et "
                       f"{N_VARIANTES_MAX}.")
     return n, None
+
+
+def verifier_bbox_max(valeur):
+    """Retourne ([X, Y, Z], erreur). None en entree = aucune borne exacte demandee.
+
+    Pourquoi cette option existe a cote des tailles nommees : leur plafond est CUBIQUE,
+    et un objet elance n'y tient pas. Un phare demande en « petite » plafonne a
+    16x16x20 et sort en gateau ; 10x10x48 dit etroit ET haut.
+
+    Accepte une liste [X, Y, Z] ou la chaine « 10x10x48 » que l'interface envoie.
+
+    Refuse au depot plutot que de laisser l'agent echouer : la personne est encore
+    devant son ecran, et un job cree ici ne sera traite que plus tard, ailleurs.
+    """
+    if valeur is None or valeur == "":
+        return None, None
+
+    if isinstance(valeur, str):
+        morceaux = valeur.lower().replace("*", "x").replace(" ", "").split("x")
+        if len(morceaux) != 3:
+            return None, "La taille exacte s'écrit XxYxZ, par exemple 10x10x48."
+        valeur = morceaux
+
+    if not isinstance(valeur, (list, tuple)) or len(valeur) != 3:
+        return None, "La taille exacte demande trois nombres : largeur, profondeur, hauteur."
+    try:
+        bornes = [int(v) for v in valeur]
+    except (TypeError, ValueError):
+        return None, "La taille exacte demande trois nombres entiers."
+
+    if any(v < 1 or v > m for v, m in zip(bornes, BBOX_MAX)):
+        return None, (f"Taille exacte hors limites : chaque valeur doit aller de 1 à "
+                      f"{BBOX_MAX[0]} (X), {BBOX_MAX[1]} (Y), {BBOX_MAX[2]} (Z).")
+    return bornes, None
 
 
 # --- Avancement lisible -----------------------------------------------------------

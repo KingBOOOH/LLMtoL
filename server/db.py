@@ -59,6 +59,9 @@ class Job(Base):
                                           default=uuid.uuid4)
     prompt: Mapped[str] = mapped_column(Text, nullable=False)
     taille: Mapped[str | None] = mapped_column(Text)
+    # Borne exacte [X, Y, Z], pour les formes elancees que les tailles nommees ne
+    # savent pas exprimer : leur plafond est cubique. L'emporte sur `taille`.
+    bbox_max: Mapped[list[int] | None] = mapped_column(ARRAY(Integer))
     n_variantes: Mapped[int] = mapped_column(Integer, nullable=False, default=4)
     status: Mapped[str] = mapped_column(Text, nullable=False, default="en_attente")
     # Essai d'origine quand ce job est une RELANCE du meme prompt. Toujours la racine,
@@ -166,3 +169,4 @@ def assurer_schema():
                         "REFERENCES jobs(id) ON DELETE SET NULL"))
         cx.execute(text("CREATE INDEX IF NOT EXISTS jobs_origine_idx "
                         "ON jobs (origine_id)"))
+        cx.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS bbox_max integer[]"))

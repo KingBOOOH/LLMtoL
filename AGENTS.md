@@ -75,6 +75,13 @@ server/regles.py     règles métier, sans FastAPI ni base (donc testables sur l
 server/db.py         modèles SQLAlchemy, PARTAGÉS entre l'API et l'agent
 server/static/       interface Vue 3 chargée par CDN, sans chaîne de build
 
+L'IMAGE DE L'API NE CONTIENT QUE server/ (Dockerfile.api) : ni src/, ni numpy, ni la
+bibliothèque LDraw. Donc server/ ne doit JAMAIS importer src/ — ça passe les tests sur
+l'hôte et fait planter le conteneur AU DÉMARRAGE, pas au premier appel. Quand une
+constante du générateur est nécessaire à une validation d'API, la recopier dans
+server/regles.py ET ajouter un test qui compare les deux valeurs : c'est le test qui
+rend la duplication sûre, pas la bonne volonté. Fait pour BBOX_MAX.
+
 Outils :
 
 tools/check_env.py        diagnostic environnement, lecture seule
@@ -88,7 +95,7 @@ eval/run_eval.py             harnais, avec --resume et --compare
 eval/testset.json            20 prompts sémantiques figés
 eval/primitives_testset.json 11 formes primitives, avec référence calculable
 
-Codex doit confirmer les fichiers réellement présents avant de modifier quoi que ce soit.
+L'agent doit confirmer les fichiers réellement présents avant de modifier quoi que ce soit.
 
 Format DSL cible
 

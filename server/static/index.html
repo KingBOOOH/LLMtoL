@@ -52,6 +52,8 @@
        letter-spacing: 0.06em; color: var(--doux); font-weight: 600; }
 
   label { display: block; font-size: 13px; color: var(--doux); margin-bottom: 6px; }
+  small.aide { display: block; margin-top: 4px; font-size: 12px; color: var(--doux);
+               max-width: 22rem; }
   textarea, select, input {
     width: 100%; background: var(--fond); color: var(--texte);
     border: 1px solid var(--bord); border-radius: 8px; padding: 10px 12px;
@@ -253,7 +255,14 @@
           <option value="petite">petite</option>
           <option value="moyenne">moyenne</option>
           <option value="grande">grande</option>
+          <option value="exacte">taille exacte…</option>
         </select>
+      </div>
+      <div v-if="taille === 'exacte'">
+        <label for="bb">Largeur × profondeur × hauteur</label>
+        <input id="bb" v-model="bboxMax" placeholder="10x10x48" style="width: 9rem;">
+        <small class="aide">en tenons × tenons × plates — pour un objet étroit et haut,
+          qu'une taille nommée ne sait pas exprimer</small>
       </div>
       <div>
         <label for="n">Variantes à proposer</label>
@@ -514,7 +523,7 @@ const EN_COURS = ["en_attente", "en_cours", "a_choisir", "en_finition"];
 Vue.createApp({
   data() {
     return {
-      prompt: "", taille: "", nVariantes: 4,
+      prompt: "", taille: "", bboxMax: "", nVariantes: 4,
       jobs: [], statut: { agent_actif: false, agent: null },
       ouvert: null, loupe: null, erreur: "", envoi: false, choix: false,
       relance: null, relanceN: 4, complement: false, achat: null, copie: null,
@@ -595,7 +604,12 @@ Vue.createApp({
         await this.api("/api/jobs", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            prompt: this.prompt, taille: this.taille || null, n_variantes: this.nVariantes,
+            prompt: this.prompt,
+            // "exacte" n'est pas une taille nommee : c'est le choix d'une borne
+            // precise, que le serveur valide avec la meme fonction que le generateur.
+            taille: this.taille === "exacte" ? null : (this.taille || null),
+            bbox_max: this.taille === "exacte" ? this.bboxMax : null,
+            n_variantes: this.nVariantes,
           }),
         });
         this.prompt = "";

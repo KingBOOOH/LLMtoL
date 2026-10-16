@@ -24,6 +24,7 @@ from server.regles import (
     refus_de_regeneration,
     refus_de_relance,
     variante_vignette,
+    verifier_bbox_max,
     verifier_n_variantes,
 )
 
@@ -97,6 +98,7 @@ def _job_json(job, avec_variantes=True):
         "origine_id": str(job.origine_id) if job.origine_id else None,
         "racine_id": str(racine_de(job)),
         "taille": job.taille,
+        "bbox_max": job.bbox_max,
         "n_variantes": job.n_variantes,
         "status": job.status,
         "etape": job.etape,
@@ -154,6 +156,13 @@ def creer_job(payload: dict = Body(...)):
     if erreur:
         raise HTTPException(400, erreur)
 
+    # Borne exacte, pour les formes elancees que les tailles nommees ne savent pas
+    # exprimer. Validee par la MEME fonction que le generateur, pas par une regle
+    # recopiee ici.
+    bbox_max, erreur = verifier_bbox_max(payload.get("bbox_max"))
+    if erreur:
+        raise HTTPException(400, erreur)
+
     with Session() as s:
         if agent_actif(s) is None:
             # Refuser maintenant plutot que de creer un job qui ne partira jamais :
@@ -161,7 +170,7 @@ def creer_job(payload: dict = Body(...)):
             raise HTTPException(
                 503, "Aucun agent de génération actif. Lance `python agent.py` sur la "
                      "machine où sont installés Blender et LM Studio.")
-        job = Job(prompt=prompt, taille=taille, n_variantes=n)
+        job = Job(prompt=prompt, taille=taille, n_variantes=n, bbox_max=bbox_max)
         s.add(job)
         s.commit()
         return _job_json(job)
@@ -250,6 +259,7 @@ def relancer(job_id: str, payload: dict = Body(default={})):
         if erreur:
             raise HTTPException(400, erreur)
         nouveau = Job(prompt=job.prompt, taille=job.taille, n_variantes=n,
+                      bbox_max=job.bbox_max,
                       # Toujours la racine : une relance de relance reste au meme
                       # niveau, sinon regrouper demanderait de remonter un arbre.
                       origine_id=racine_de(job))

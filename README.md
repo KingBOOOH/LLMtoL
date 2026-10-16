@@ -970,6 +970,20 @@ python lego.py "Un phare blanc avec une lanterne rouge" --bbox-max 10x10x48
 Il l'emporte sur `--taille`, et une saisie invalide échoue **net** plutôt que de générer
 silencieusement à la mauvaise échelle.
 
+**Dans l'interface web**, c'est une quatrième entrée du menu *Taille* — « taille exacte… »
+— qui dévoile un champ `XxYxZ`. Elle reste cachée tant qu'on ne la choisit pas : l'immense
+majorité des demandes n'en a pas besoin.
+
+La borne est validée **au dépôt**, pas chez l'agent : la personne est encore devant son
+écran, alors qu'un job créé ne sera traité que plus tard et ailleurs. Une relance reporte
+la borne de l'essai d'origine, sinon le nouvel essai changerait d'échelle en silence.
+
+Point d'implémentation à ne pas défaire : `server/regles.py` **recopie** `BBOX_MAX` au lieu
+de l'importer, parce que l'image de l'API ne contient que `server/` — ni `src/`, ni numpy.
+Un import y passerait les tests sur l'hôte et ferait planter le conteneur au démarrage. Ce
+qui rend la duplication sûre est un test qui compare les deux valeurs et casse dès
+qu'elles divergent.
+
 ### Les formes courbes
 
 `cylinder` et `sphere` existent parce que la mesure a désigné le modèle, pas le langage :

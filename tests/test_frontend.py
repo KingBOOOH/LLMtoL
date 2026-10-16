@@ -374,3 +374,28 @@ def test_le_mode_d_emploi_distingue_les_deux_options():
     assert "Upload a file from your computer" in html
     assert "Upload BrickLink XML format" in html
     assert ".bsx .ldr .lxf .io" in html
+
+
+# ---------- borne exacte dans le formulaire (US V2-03) ----------
+
+def test_le_champ_de_taille_exacte_existe_et_se_devoile():
+    """Un plafond nomme est CUBIQUE : un phare demande en « petite » sort en gateau.
+    Le champ n'apparait que si on choisit « exacte », pour ne pas charger le formulaire
+    de l'immense majorite des demandes."""
+    html = INDEX.read_text(encoding="utf-8")
+
+    assert '<option value="exacte">' in html, "l'option de taille exacte a disparu"
+    assert 'v-model="bboxMax"' in html, "le champ n'est plus relie a l'etat"
+    assert "v-if=\"taille === 'exacte'\"" in html, "le champ doit rester cache par defaut"
+
+
+def test_la_taille_exacte_et_la_taille_nommee_s_excluent():
+    """« exacte » n'est pas une taille nommee : l'envoyer telle quelle au serveur ferait
+    echouer la validation, qui n'accepte que petite/moyenne/grande."""
+    script = _script_de_l_application()
+
+    assert 'taille: this.taille === "exacte" ? null' in script, \
+        "« exacte » doit etre traduit en taille nulle"
+    assert 'bbox_max: this.taille === "exacte" ? this.bboxMax : null' in script, \
+        "la borne ne doit partir QUE si « exacte » est choisi"
+    assert "bboxMax:" in script, "l'etat initial doit declarer bboxMax"

@@ -20,6 +20,7 @@ from server.regles import (
     EN_VOL,
     refus_de_regeneration,
     refus_de_relance,
+    verifier_bbox_max,
     verifier_n_variantes,
 )
 
@@ -274,3 +275,53 @@ def test_rien_a_completer_quand_tout_a_abouti():
     job = _Job(status="a_choisir", n_variantes=2,
                variantes=[_Variante(design_json=DESIGN), _Variante(design_json=DESIGN)])
     assert refus_de_completion(job)
+
+
+# ---------- borne exacte, pour les formes elancees (US V2-03) ----------
+
+def test_sans_borne_exacte_rien_ne_change():
+    """L'option est facultative : une soumission qui ne la porte pas doit se comporter
+    exactement comme avant."""
+    assert verifier_bbox_max(None) == (None, None)
+    assert verifier_bbox_max("") == (None, None)
+
+
+def test_la_borne_exacte_se_lit_en_liste_comme_en_chaine():
+    """L'interface envoie « 10x10x48 », un appel direct a l'API peut envoyer la liste."""
+    for valeur in ("10x10x48", "10X10X48", "10 x 10 x 48", "10*10*48", [10, 10, 48]):
+        bornes, erreur = verifier_bbox_max(valeur)
+        assert erreur is None, valeur
+        assert bornes == [10, 10, 48], valeur
+
+
+def test_une_borne_exacte_invalide_est_refusee_avec_un_message_utile():
+    """Refuser au depot plutot que de creer un job qui echouera chez l'agent : la
+    personne est encore devant son ecran."""
+    for valeur in ("10x10", "abc", "10xAx48", [10, 10]):
+        bornes, erreur = verifier_bbox_max(valeur)
+        assert bornes is None and erreur, valeur
+
+    for hors_limites in ([99, 10, 10], [10, 10, 99], [0, 10, 10]):
+        bornes, erreur = verifier_bbox_max(hors_limites)
+        assert bornes is None
+        assert "limites" in erreur, hors_limites
+
+
+def test_la_borne_de_l_api_ne_peut_pas_diverger_de_celle_du_generateur():
+    """server/regles.py RECOPIE BBOX_MAX au lieu de l'importer, et ce n'est pas un
+    choix : l'image de l'API ne contient que server/ (Dockerfile.api), ni src/ ni
+    numpy — un import ferait planter le conteneur au demarrage.
+
+    Ce test est ce qui rend la duplication sure. Il tourne sur l'hote, ou les deux
+    modules sont importables, et casse des que les deux valeurs s'ecartent. Sans lui,
+    l'API accepterait un jour une taille que la chaine refuserait ensuite.
+    """
+    from server import regles
+    from src.dsl_schema import BBOX_MAX
+
+    assert list(regles.BBOX_MAX) == list(BBOX_MAX), (
+        "server/regles.BBOX_MAX a diverge de src/dsl_schema.BBOX_MAX")
+
+    au_plafond, erreur = verifier_bbox_max(list(BBOX_MAX))
+    assert erreur is None and au_plafond == list(BBOX_MAX)
+    assert verifier_bbox_max([BBOX_MAX[0] + 1, BBOX_MAX[1], BBOX_MAX[2]])[0] is None

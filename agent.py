@@ -245,7 +245,8 @@ def produire_variantes(session, job):
         t0 = time.time()
         try:
             result = pipeline.generer_modele(job.prompt, iter_dir, log_path,
-                                             taille=job.taille)
+                                             taille=job.taille,
+                                             bbox_max=job.bbox_max)
         except (LLMCallError, RuntimeError) as e:
             # Echec attendu : reseau, ou design toujours invalide apres reparations.
             # Une variante ratee ne doit pas faire tomber les autres.
