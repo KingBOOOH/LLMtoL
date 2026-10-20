@@ -617,3 +617,244 @@ score 83,2, zéro réparation, deux `cylinder`. Vérifié au rendu.
 nouveau `--bbox-max` **pendant** la campagne : le modèle n'a que 4096 jetons de contexte
 pour 4 emplacements parallèles, et deux requêtes simultanées le font déborder. Ce n'est
 pas une donnée, c'est une interférence. Ne pas générer pendant une campagne de mesure.
+
+---
+
+## Le score pénalisait la taille, et ce n'est pas une note de qualité
+
+Point de départ : un château de 456 pièces à quatre tours notait **69,2**, là où d'autres
+modèles bien plus pauvres passaient 90. Soupçon de départ — un score anti-corrélé à
+l'ambition — **partiellement démenti par les chiffres**, et c'est le résultat utile.
+
+### Décomposition exacte, sur deux modèles archivés
+
+```
+château 456 pièces : 100 − 20 (11 flottantes, compte plafonné) − 10,8 (joints 0,542) = 69,2
+modèle  407 pièces : 100 −  0 (aucune flottante)               −  5,0 (joints 0,250) = 95,0
+```
+
+Les deux sont gros. Ce n'est donc **pas** « petit bat grand » : c'est un seul terme qui
+comptait en valeur absolue quand tous les autres comptaient en taux.
+
+```python
+score -= 5  * min(len(floating_errors), 4)    # compte -> plafond atteint à 4 pièces
+score -= 20 * joints_rate                     # taux <- le bon patron était déjà là
+```
+
+Le plafond de −20 est atteint dès 4 pièces flottantes, ce qui arrive mécaniquement quand
+un modèle grossit : 11 flottantes sur 456, soit **2,4 %**, coûtaient le plafond entier.
+Un modèle de 7 pièces ne peut structurellement pas l'atteindre.
+
+Les 2 avertissements « op #7 » du château coûtent **zéro** : les dépassements de bbox ne
+sont pas au score du tout.
+
+### Après : taux, au même poids maximal que les joints
+
+`score -= 20 * floating_rate`. Recalculé sur les **16 rapports archivés**, sans aucune
+génération :
+
+| pièces | flottantes | taux | avant | après |
+|---|---|---|---|---|
+| 485 | 0 | 0 % | 84,6 | 84,6 |
+| 456 | 11 | 2,4 % | 69,2 | **88,7** |
+| 412 | 8 | 1,9 % | 71,2 | **90,8** |
+| 244 | 23 | 9,4 % | 70,5 | **88,6** |
+| 139 | 4 | 2,9 % | 73,3 | **92,7** |
+| 53 | 6 | 11,3 % | 77,0 | **94,7** |
+| 18 | 3 | 16,7 % | 75,8 | **87,5** |
+
+**+19 points** sur les 5 modèles concernés, **aucune régression** sur les 11 autres (leur
+score est identique au dixième : ils n'avaient aucune flottante).
+
+### L'inversion épinglée par le test
+
+Même forme — boîte creuse coiffée d'un toit plat — à deux échelles :
+
+| | pièces | flottantes | taux | avant | après |
+|---|---|---|---|---|---|
+| 14×14 | 37 | 3 | 8,1 % | 77,0 | 90,4 |
+| 20×20 | 76 | **8** | 10,5 % | **73,7** | **91,6** |
+
+Le gros modèle avait plus de flottantes en nombre absolu pour un taux comparable, et se
+retrouvait **classé derrière** le petit. `test_flottantes_penalisees_au_taux_et_non_au_nombre`
+fixe l'invariant : à taux comparable, agrandir ne doit pas baisser le score. Le seuil
+`> 80` y est le discriminant — l'ancien plafond de −20 rendait 80 inatteignable.
+
+### Mais la barrière annoncée échoue, et c'est la vraie conclusion
+
+Barrière posée avant la mesure : *le château doit passer devant la dalle beige de
+7 pièces*. **Elle échoue.** La dalle reste première à 95,0, avant comme après.
+
+En regardant pourquoi : la dalle a zéro avertissement et zéro joint aligné. Elle est
+géométriquement parfaite. Elle **mérite** 95 sur la validité.
+
+Donc le score n'était pas cassé — il mesure exactement ce qu'il annonce, la validité
+géométrique, et aucun repondérage n'en fera une note de ressemblance. C'est la
+priorité 1 de `AGENTS.md`, toujours ouverte. **Ne pas réessayer de « corriger le score »
+pour qu'il classe l'ambition : il n'est pas l'instrument.** Pour comparer deux
+configurations de génération, le banc à utiliser est `eval/primitives_testset.json`, dont
+l'IoU a une référence calculable.
+
+Au passage : 10 modèles archivés sur 16 sont au-dessus de 83. La validité est déjà au
+plafond, elle ne discrimine presque plus.
+
+---
+
+## Relevé de référence sur les 11 primitives (16 octobre 2026)
+
+`v1prim_base30b_20261016_135655`. Configuration du jour : `qwen3-coder-30b` aux **deux**
+étapes, contexte chargé à **4096** sur 262144 disponibles, Q4_K_M, 4 emplacements
+parallèles. 11 formes, `--n 1`. Posé pour servir de point de comparaison aux changements
+de configuration de génération (modèle du planificateur, contexte, few-shot).
+
+**Non comparable au relevé du 10 octobre** (IoU 0,706) : celui-ci précède la correction
+de la sphère, qui a changé la fonction de référence elle-même dans `src/primitives.py`.
+Les IoU d'avant et d'après ne mesurent pas contre la même cible. Le jeu a aussi gagné
+deux cas depuis.
+
+### Chiffres
+
+| | |
+|---|---|
+| générations valides | **9/11** |
+| IoU moyen sur les survivants | **0,916** ← le chiffre du résumé |
+| IoU moyen, échecs comptés 0 | **0,750** ← l'honnête |
+| formes à IoU 1,000 exact | **7 sur 9** |
+| score moyen (nouveau barème au taux) | 88,2 |
+| durée moyenne | 104,5 s |
+
+### Par forme, du pire au meilleur
+
+| forme | IoU | durée | pièces |
+|---|---|---|---|
+| `prim_escalier` | **ÉCHEC** | 212 s | 0 |
+| `prim_sphere` | **ÉCHEC** | 610 s | 0 |
+| `prim_pyramide` | 0,463 | 74 s | 44 |
+| `prim_anneau` | 0,784 | 40 s | 25 |
+| `prim_cube` · `prim_pave` · `prim_croix` · `prim_tour` | 1,000 | 25–42 s | 9–16 |
+| `prim_cylindre` · `prim_cylindre_libre` | 1,000 | 24–29 s | 29 |
+| `prim_sphere_libre` | 1,000 | 31 s | 120 |
+
+### Les deux échecs sont sémantiques, pas de la troncature
+
+- `prim_escalier` : **4 composantes disjointes** (tailles [72, 12, 12, 12]), erreur
+  bloquante, échec après 2 réparations. C'est le cas déjà diagnostiqué.
+- `prim_sphere` : **modèle vide** après 2 réparations, 610 s. C'est le cas qui mesure
+  l'obéissance à une méthode imposée, et il ne produit plus rien du tout.
+
+À noter : les 2 échecs ont consommé **822 s des 1150 s du relevé**, soit 71 % du temps
+pour 18 % des cas. La boucle de réparation coûte sur ce qui échoue, pas sur ce qui passe.
+
+### CE QUE CE RELEVÉ RÉVÈLE SUR LE BANC LUI-MÊME
+
+**7 formes sur 9 sont à 1,000 exact.** Le banc est donc, lui aussi, proche de son
+plafond : seules **4 formes** peuvent encore bouger — `escalier`, `sphere`, `pyramide`,
+`anneau`. Et deux d'entre elles sont documentées comme pathologiques par construction.
+
+Conséquence pour toute comparaison de configurations de génération : elle se jouera
+entièrement sur ces 4 formes. Les 7 autres ne feront que reconfirmer 1,000 et coûter du
+temps. Un `--n 3` sur les 11 formes, c'est 33 générations dont 21 pour reconfirmer un
+plafond. En tenir compte avant de lancer une campagne.
+
+À noter aussi : `--n 1` ne permet **pas** de distinguer une régression d'un aléa de
+graine. `prim_escalier` était valide en octobre (IoU 0,139–0,200) et échoue ici ; avec un
+seul tirage, on ne peut pas trancher.
+
+### DÉFAUT DE L'INSTRUMENT, à connaître avant de lire un CSV
+
+Sur une ligne en échec, `eval/run_eval.py` laisse `repairs_used` à sa valeur par défaut
+**0**, alors que `error.txt` montre 2 réparations réellement consommées. Le résumé
+annonce donc « Réparations moyennes : 0.00 » quand le vrai chiffre est **4 réparations
+sur 11 générations, soit 0,36**. L'instrument sous-estime le coût de réparation
+précisément sur les générations qui coûtent le plus cher. Non corrigé à dessein : le
+harnais est l'instrument partagé des relevés archivés, et le modifier casserait la
+comparabilité avec eux. Lire `error.txt` pour le vrai compte.
+
+## Les ops de primitives rattrapent un plan faux (arbre, 16 octobre 2026)
+
+Génération d'un arbre, `--bbox-max 16x16x56 --sans-notice`, 30B aux deux étapes.
+Prompt appliquant la règle « nommer et dimensionner, ne pas décrire » :
+
+    un arbre : un tronc cylindrique de 4 tenons de diametre et 20 plates de haut en
+    reddish_brown, et un feuillage spherique de 16 tenons de diametre en green,
+    centre au sommet du tronc et le chevauchant sur 4 plates
+
+Design obtenu, **2 lignes pour 1153 pièces**, 18,0 s, **0 réparation** :
+
+    {"op": "cylinder", "at": [6,6,0], "diameter": 4,  "height": 20, "color": "reddish_brown"}
+    {"op": "sphere",   "at": [0,0,16], "diameter": 16,               "color": "green"}
+
+Quatrième confirmation de la règle de la priorité 2, et la **première sur `sphere` dans
+un objet composite** (elle n'avait été vérifiée qu'isolée, sur `prim_sphere_libre`).
+Rendu vérifié sur `render_iso.png` : c'est un arbre, sans ambiguïté.
+
+### CE QUI EST NOUVEAU : l'op absorbe une erreur du planificateur
+
+Le plan était **faux sur deux points**, et le modèle a quand même produit la bonne forme :
+
+    2. feuillage   X=0..16 Y=0..16 z=16..35   sphérique plein, en green
+
+- `z=16..35` = **20 plates pour une sphère de 16 tenons qui en occupe 40**. Le
+  planificateur a pris le diamètre pour une hauteur, alors que `planner_system.txt`
+  énonce la règle des 2,5× **deux fois**, dont une avec l'exemple chiffré « 7 tenons →
+  18 plates ». Confirme qu'allonger encore ce prompt ne sert à rien (déjà conclu en
+  priorité 2) : ne pas retenter.
+- `X=0..16` = 17 tenons dans un bbox de 16.
+
+Les deux erreurs sont **absorbées sans dégât** parce que le designer a appelé l'op :
+`sphere` calcule elle-même son emprise à partir du seul `diameter`. Argument nouveau en
+faveur des primitives — appeler l'op ne fait pas que mieux dessiner, **ça rattrape un
+plan faux**. À la main, ces deux erreurs donnaient un feuillage écrasé de moitié et un
+dépassement de bbox.
+
+### Score 79,9 — et le modèle est le plus reconnaissable de la journée
+
+| Terme | Valeur | Points |
+|---|---|---|
+| Joints alignés | 0,903 | **−18,1** |
+| Pièces flottantes | 115 / 1153 = 9,97 % | −2,0 |
+| **Total** | | **79,9** |
+
+Les 115 flottantes sont le dessous en surplomb du feuillage : un arbre n'a pas d'autre
+façon d'exister. L'essentiel de la perte vient des **joints alignés**, mécanique sur une
+sphère — la nomenclature le montre : **524 briques 1x1 sur 1153 pièces (45 %)**, parce
+qu'une surface courbe se pave en escaliers de 1x1, et une colonne de 1x1 a ses joints
+alignés par construction.
+
+Cinquième cas du jour où le score va **à l'inverse** de la qualité visuelle (table basse
+93,1 ; château raté 94,4 ; arbre réussi 79,9). Ne pas y voir une régression : confirme la
+note « LE SCORE N'EST PAS UNE NOTE DE QUALITÉ » et renforce la priorité 1.
+
+### Notice reconstruite sans aucun appel LLM
+
+Dossier généré avec `--sans-notice`, notice produite après coup en rejouant la chaîne
+déterministe depuis `design.json` (`compile_design` → `tile` → `pipeline.preparer_notice`
+→ `render_all` → `write_notice_html` / `write_pdf`), soit le chemin de régénération de
+l'agent web. **40 étapes** (plafond du regroupement adaptatif), 20 vignettes, 534 s de
+rendu Blender pour 60 sous-modèles, PDF de 1,7 Mo. 1153 pièces pour 20 références.
+
+## Le planificateur ne sait pas répartir 5 directions (étoile, 16 octobre 2026)
+
+Tentative d'étoile à cinq branches en relief, `--bbox-max 28x28x10`. **Génération jamais
+aboutie** : le designer tournait depuis plus de 10 min sans rendre sa réponse (contre
+18 s pour l'arbre) quand le processus a été tué par la pression mémoire. Aucun
+`design.json`, donc **rien n'est mesuré sur l'adoption de `layer`** — hypothèse non
+vérifiée : le coût de la grammaire ASCII.
+
+Le plan, lui, a été produit (37,7 s) et il est **faux avant tout design** :
+
+    1. Base centrale  X=4..24  Y=4..24  z=0..2   circulaire, 20 tenons
+    2. Branche 1      X=12..16 Y=0..4   z=0..9
+    ...
+    5. Branche 4      X=4..8   Y=20..24 z=0..9   <- entièrement DANS la base
+
+- Les cinq branches sont réparties sur les **quatre bords d'un carré**, pas à 72°. La
+  branche 4 tombe à l'intérieur de la base et ne dépassera jamais : il ne resterait que
+  quatre pointes.
+- Proportions : cœur de 20 tenons contre 4 tenons de dépassement par pointe. Ce n'est
+  pas une étoile, c'est une roue dentée.
+
+Troisième cas documenté de « LE DÉFAUT VIENT DU PLANIFICATEUR », après le décalage z et
+la confusion plate/brique de `prim_escalier`. Une symétrie d'ordre 5 exclut `mirror`, qui
+est axial. Piste non essayée : imposer la répartition et le rapport pointe/cœur dans le
+prompt (« tous les 72 degres », « pointes sur un cercle de 28, coeur de 10 »).
