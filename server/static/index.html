@@ -43,6 +43,9 @@
   }
   .point { width: 8px; height: 8px; border-radius: 50%; background: var(--erreur); }
   .point.vivant { background: var(--ok); }
+  a.pastille { text-decoration: none; }
+  a.pastille:hover { background: var(--carte-haut); color: var(--texte); }
+  .coin { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
   .carte {
     background: var(--carte); border: 1px solid var(--bord);
@@ -229,10 +232,14 @@
       <h1>LLM<span>to</span>L</h1>
       <p class="sous">Décris un objet, obtiens un modèle LEGO en vraies pièces.</p>
     </div>
-    <span class="pastille">
-      <span class="point" :class="{ vivant: statut.agent_actif }"></span>
-      {{ statut.agent_actif ? 'Agent ' + statut.agent + ' actif' : 'Aucun agent actif' }}
-    </span>
+    <div class="coin">
+      <a class="pastille" href="/ui/relecture.html"
+         title="Relire les générations passées et dire si elles correspondent à la demande">Relecture</a>
+      <span class="pastille">
+        <span class="point" :class="{ vivant: statut.agent_actif }"></span>
+        {{ statut.agent_actif ? 'Agent ' + statut.agent + ' actif' : 'Aucun agent actif' }}
+      </span>
+    </div>
   </header>
 
   <div v-if="!statut.agent_actif" class="bandeau alerte">

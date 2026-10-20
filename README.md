@@ -341,6 +341,22 @@ Docker                            Hôte Windows
   outputs/ monté en lecture seule       blender.exe
 ```
 
+### Planche de relecture
+
+`/ui/relecture.html` montre les générations passées avec leur prompt et leurs rendus, et
+recueille pour chacune un avis : **est-ce que ça correspond à la demande, et sinon en
+quoi**. C'est le « en quoi » qui vaut — un choix de variante dit seulement laquelle est
+la moins mauvaise, un commentaire dit *ce qui* est faux. Ces avis sont la vérité terrain
+qui manquait pour calibrer une mesure de similarité sémantique (issue #31).
+
+Le score de validité et le nombre de pièces n'y figurent pas, et `/api/relecture` ne les
+renvoie pas : ce sont les deux références triviales qu'une telle mesure devra battre, et
+les afficher pendant la relecture contaminerait l'avis.
+
+Les variantes écartées n'ont plus d'image — l'agent les efface après le choix — mais leur
+`design_json` est conservé, donc leurs rendus se reconstruisent en lot avec
+`python -m tools.render_batch`. L'API ne déclenche jamais Blender.
+
 L'interface affiche une **barre de progression alimentée par des chiffres réels** :
 `design 2/4`, `rendu des étapes 38/46`. La progression du rendu — la phase la plus
 longue — est lue dans la sortie de Blender, qui annonce déjà chaque modèle du lot. Quand

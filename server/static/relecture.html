@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LLMtoL — relecture</title>
+<!--
+  Page SEPAREE du panneau principal, et c'est voulu : l'interface de generation n'a
+  qu'un panneau, qui suit ce sur quoi on a clique. La relecture est un autre usage
+  (parcourir le passe, pas suivre ce qui travaille) ; l'empiler dans le meme panneau
+  aurait casse cette regle pour rien.
+
+  Le SCORE N'APPARAIT NULLE PART ici. Il est deja absent de /api/relecture, pour que
+  l'avis saisi ne soit pas influence par un chiffre dont on sait qu'il va a l'inverse
+  de la qualite visuelle.
+
+  Memes jetons de couleur que index.html, volontairement recopies : extraire la
+  feuille de style de index.html serait un remaniement de 300 lignes pour economiser
+  les 60 d'ici.
+-->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.5.13/vue.global.prod.min.js"></script>
+<style>
+  :root {
+    --fond: #1b1d22; --carte: #24262c; --carte-haut: #2b2d33;
+    --bord: #353841; --texte: #e8e9ec; --doux: #9a9ea8;
+    --accent: #ffcf3f; --accent-texte: #2a2200;
+    --ok: #4ec37a; --erreur: #e5574f;
+    --rayon: 10px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--fond); color: var(--texte);
+         font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .page { max-width: 1060px; margin: 0 auto; padding: 0 16px 64px; }
+  a { color: var(--accent); }
+
+  header { display: flex; align-items: flex-end; justify-content: space-between;
+           gap: 16px; flex-wrap: wrap; padding: 24px 0 18px;
+           border-bottom: 1px solid var(--bord); margin-bottom: 24px; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+  h1 span { color: var(--accent); }
+  .sous { color: var(--doux); font-size: 13px; margin: 4px 0 0; max-width: 46rem; }
+
+  .filtres { display: flex; gap: 8px; align-items: center; }
+  button { font: inherit; cursor: pointer; border-radius: 8px;
+           border: 1px solid var(--bord); background: var(--carte);
+           color: var(--texte); padding: 7px 13px; }
+  button:hover { background: var(--carte-haut); }
+  button.actif { background: var(--accent); color: var(--accent-texte);
+                 border-color: var(--accent); font-weight: 600; }
+  button.oui.choisi { background: var(--ok); border-color: var(--ok); color: #0a2414;
+                      font-weight: 600; }
+  button.non.choisi { background: var(--erreur); border-color: var(--erreur);
+                      color: #2a0a08; font-weight: 600; }
+
+  .demande { background: var(--carte); border: 1px solid var(--bord);
+             border-radius: var(--rayon); padding: 18px 20px; margin-bottom: 20px; }
+  .prompt { font-size: 16px; margin: 0 0 4px; }
+  .meta { color: var(--doux); font-size: 12px; margin: 0 0 16px; }
+
+  .rendus { display: grid; gap: 16px;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+  .rendu { background: var(--carte-haut); border: 1px solid var(--bord);
+           border-radius: 8px; padding: 12px; }
+  .rendu img { width: 100%; display: block; border-radius: 6px; background: #2b2d33; }
+  .vide { aspect-ratio: 1; display: grid; place-items: center; text-align: center;
+          color: var(--doux); font-size: 12px; padding: 12px; border-radius: 6px;
+          border: 1px dashed var(--bord); }
+  .ligne { display: flex; align-items: center; gap: 8px; margin: 10px 0 8px;
+           flex-wrap: wrap; }
+  .etiquette { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+               color: var(--doux); }
+  .retenue { color: var(--accent); }
+  textarea { width: 100%; background: var(--fond); color: var(--texte);
+             border: 1px solid var(--bord); border-radius: 8px; padding: 9px 11px;
+             font: inherit; resize: vertical; min-height: 60px; }
+  .pied { display: flex; align-items: center; justify-content: space-between;
+          gap: 8px; margin-top: 8px; }
+  .relu { font-size: 12px; color: var(--doux); }
+  .erreur { color: var(--erreur); font-size: 12px; }
+  .message { color: var(--doux); padding: 32px 0; }
+</style>
+</head>
+<body>
+<div id="app" class="page">
+
+  <header>
+    <div>
+      <h1>LLM<span>to</span>L — relecture</h1>
+      <p class="sous">
+        Pour chaque rendu, dis s'il correspond à la demande — et quand ce n'est pas le
+        cas, <strong>en quoi</strong>. C'est le « en quoi » qui vaut : un choix de
+        variante dit seulement laquelle est la moins mauvaise.
+      </p>
+    </div>
+    <div class="filtres">
+      <button :class="{ actif: !sansAvis }" @click="charger(false)">Tout</button>
+      <button :class="{ actif: sansAvis }" @click="charger(true)">À relire</button>
+      <a href="/ui/">← Générer</a>
+    </div>
+  </header>
+
+  <p v-if="erreur" class="erreur">{{ erreur }}</p>
+  <p v-if="chargement" class="message">Chargement…</p>
+  <p v-else-if="!demandes.length" class="message">
+    Rien à relire ici. Génère un modèle, ou repasse sur « Tout ».
+  </p>
+
+  <section v-for="d in demandes" :key="d.job_id" class="demande">
+    <p class="prompt">{{ d.prompt }}</p>
+    <p class="meta">
+      {{ dateCourte(d.created_at) }}
+      <template v-if="d.taille"> · taille {{ d.taille }}</template>
+      <template v-if="d.bbox_max"> · {{ d.bbox_max.join('×') }}</template>
+      · {{ d.status }}
+    </p>
+
+    <div class="rendus">
+      <div v-for="v in d.variantes" :key="v.id" class="rendu">
+        <img v-if="v.a_un_rendu" :src="'/api/variantes/' + v.id + '/render/iso'"
+             :alt="'Rendu de la proposition ' + v.indice" loading="lazy">
+        <div v-else class="vide">
+          Image effacée après le choix.<br>
+          Reconstructible depuis le design, en lot.
+        </div>
+
+        <div class="ligne">
+          <span class="etiquette">
+            Proposition {{ v.indice }}<span v-if="v.name"> · {{ v.name }}</span>
+          </span>
+          <span v-if="v.is_chosen" class="etiquette retenue">retenue</span>
+        </div>
+
+        <div class="ligne">
+          <button class="oui" :class="{ choisi: brouillon(v).correspond === true }"
+                  @click="brouillon(v).correspond = brouillon(v).correspond === true ? null : true">
+            Ça correspond
+          </button>
+          <button class="non" :class="{ choisi: brouillon(v).correspond === false }"
+                  @click="brouillon(v).correspond = brouillon(v).correspond === false ? null : false">
+            Ça ne correspond pas
+          </button>
+        </div>
+
+        <textarea v-model="brouillon(v).commentaire"
+                  placeholder="En quoi ? Ex. : il manque les roues, le toit est plat, les proportions sont écrasées."></textarea>
+
+        <div class="pied">
+          <span class="relu">
+            <template v-if="brouillon(v).enregistre">Enregistré.</template>
+            <template v-else-if="v.avis_at">Relu le {{ dateCourte(v.avis_at) }}.</template>
+            <template v-else>Pas encore relu.</template>
+          </span>
+          <button @click="enregistrer(v)"
+                  :disabled="brouillon(v).envoi || !aQuoiDire(brouillon(v))">
+            {{ brouillon(v).envoi ? 'Envoi…' : 'Enregistrer' }}
+          </button>
+        </div>
+        <p v-if="brouillon(v).erreur" class="erreur">{{ brouillon(v).erreur }}</p>
+      </div>
+    </div>
+  </section>
+
+  <p v-if="demandes.length && encore">
+    <button @click="suivantes">Charger les suivantes</button>
+  </p>
+</div>
+
+<script>
+const PAR_PAGE = 20;
+
+Vue.createApp({
+  data() {
+    return {
+      demandes: [], brouillons: {}, sansAvis: false,
+      chargement: true, erreur: "", offset: 0, encore: false,
+    };
+  },
+  mounted() { this.charger(false); },
+  methods: {
+    /** Etat de saisie d'une variante, cree a la demande depuis l'avis enregistre.
+     *  Les boutons et la zone de texte ecrivent ici, jamais dans la reponse de
+     *  l'API : sans ca, un rechargement de la liste effacerait une saisie en cours. */
+    brouillon(v) {
+      if (!this.brouillons[v.id]) {
+        this.brouillons[v.id] = {
+          correspond: v.correspond === undefined ? null : v.correspond,
+          commentaire: v.commentaire || "",
+          envoi: false, enregistre: false, erreur: "",
+        };
+      }
+      return this.brouillons[v.id];
+    },
+    /** Meme regle que server/regles.verifier_avis : un avis vide des deux cotes
+     *  n'apporte rien. Verifiee ici pour griser le bouton, et la-bas pour de vrai. */
+    aQuoiDire(b) {
+      return b.correspond !== null || b.commentaire.trim().length > 0;
+    },
+    dateCourte(iso) {
+      if (!iso) return "";
+      return new Date(iso).toLocaleString("fr-FR",
+        { day: "2-digit", month: "2-digit", year: "numeric",
+          hour: "2-digit", minute: "2-digit" });
+    },
+    async charger(sansAvis) {
+      this.sansAvis = sansAvis;
+      this.offset = 0;
+      this.chargement = true;
+      this.demandes = [];
+      this.brouillons = {};
+      await this.ajouter();
+      this.chargement = false;
+    },
+    async suivantes() {
+      this.offset += PAR_PAGE;
+      await this.ajouter();
+    },
+    async ajouter() {
+      this.erreur = "";
+      try {
+        const url = "/api/relecture?limit=" + PAR_PAGE + "&offset=" + this.offset
+                  + (this.sansAvis ? "&sans_avis=true" : "");
+        const r = await fetch(url);
+        if (!r.ok) throw new Error("L'API a répondu " + r.status + ".");
+        const page = await r.json();
+        // `encore` se fonde sur la page DEMANDEE, pas sur ce qui est affiche :
+        // l'API retire les demandes dont aucune proposition n'a abouti, donc une
+        // page pleine peut rendre moins de lignes et il resterait quand meme une
+        // suite.
+        this.encore = page.length > 0;
+        this.demandes = this.demandes.concat(page);
+      } catch (e) {
+        this.erreur = "Liste indisponible : " + e.message;
+        this.encore = false;
+      }
+    },
+    async enregistrer(v) {
+      const b = this.brouillon(v);
+      b.envoi = true; b.erreur = ""; b.enregistre = false;
+      try {
+        const r = await fetch("/api/variantes/" + v.id + "/avis", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ correspond: b.correspond,
+                                 commentaire: b.commentaire.trim() || null }),
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.detail || ("erreur " + r.status));
+        v.correspond = data.correspond;
+        v.commentaire = data.commentaire;
+        v.avis_at = data.avis_at;
+        b.enregistre = true;
+      } catch (e) {
+        b.erreur = "Avis non enregistré : " + e.message;
+      } finally {
+        b.envoi = false;
+      }
+    },
+  },
+}).mount("#app");
+</script>
+</body>
+</html>

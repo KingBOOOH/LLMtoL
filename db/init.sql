@@ -92,6 +92,17 @@ CREATE TABLE variantes (
     -- tard ce que le modele rate.
     is_rejected boolean NOT NULL DEFAULT false,
 
+    -- Avis de relecture : ce rendu correspond-il a la demande, et sinon en quoi.
+    -- TROIS etats pour `correspond` : true, false, et NULL tant que la variante n'a
+    -- pas ete relue. Une relecture pas encore faite n'est pas un « non », et c'est
+    -- ce troisieme etat qui permet de lister ce qui reste a relire.
+    -- Le commentaire libre est la vraie matiere : un choix de variante dit « A
+    -- plutot que B », lui seul dit CE QUI est faux. Les memes colonnes sont ajoutees
+    -- par server.db.assurer_schema() pour une base deja en service.
+    correspond   boolean,
+    commentaire  text,
+    avis_at      timestamptz,
+
     pdf         bytea,                   -- uniquement pour la variante choisie
     error_message text,
     created_at  timestamptz NOT NULL DEFAULT now(),

@@ -9,6 +9,7 @@ toute facon, LM Studio etant mono-modele sur CPU.
 
 import os
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
 from fastapi import Body, FastAPI, HTTPException
 from fastapi.responses import FileResponse, RedirectResponse, Response
@@ -24,6 +25,7 @@ from server.regles import (
     refus_de_regeneration,
     refus_de_relance,
     variante_vignette,
+    verifier_avis,
     verifier_bbox_max,
     verifier_n_variantes,
 )
@@ -80,6 +82,9 @@ def _variante_json(v):
         "duration_s": float(v.duration_s) if v.duration_s is not None else None,
         "is_chosen": v.is_chosen,
         "is_rejected": v.is_rejected,
+        "correspond": v.correspond,
+        "commentaire": v.commentaire,
+        "avis_at": v.avis_at.isoformat() if v.avis_at else None,
         "a_un_rendu": bool(v.render_dir),
         "a_un_pdf": v.pdf is not None,
         "error_message": v.error_message,
@@ -334,6 +339,81 @@ def supprimer_job(job_id: str):
         s.delete(job)
         s.commit()
     return Response(status_code=204)
+
+
+@app.get("/api/relecture")
+def relecture(limit: int = 20, offset: int = 0, sans_avis: bool = False):
+    """Les générations passées, pour dire si elles correspondent à la demande.
+
+    N'EXPOSE NI LE SCORE NI LE NOMBRE DE PIÈCES, et ce n'est pas un oubli. Ces deux
+    chiffres sont les références triviales contre lesquelles une métrique sémantique
+    devra se mesurer : affichés ici, ils influenceraient l'avis, et on ne mesurerait
+    plus que la capacité du score à se prédire lui-même. Le score reste consultable
+    sur le panneau principal, après le choix.
+
+    Seules les variantes qui ont abouti sont listées : sans design, il n'y a rien à
+    regarder. `a_un_rendu` est faux pour les variantes écartées, dont l'agent efface
+    les images — leur `design_json` suffit à les reconstruire en lot avec
+    tools/render_batch.py, mais l'API ne déclenche jamais Blender.
+    """
+    limit = max(1, min(limit, 100))
+    with Session() as s:
+        stmt = select(Job).order_by(Job.created_at.desc())
+        if sans_avis:
+            # Filtre en base et non apres pagination : filtrer la page deja
+            # decoupee rendrait des pages a moitie vides et sauterait des jobs.
+            stmt = stmt.where(Job.id.in_(
+                select(Variante.job_id).where(Variante.design_json.is_not(None),
+                                              Variante.avis_at.is_(None))))
+        lignes = [
+            {
+                "job_id": str(j.id),
+                "prompt": j.prompt,
+                "taille": j.taille,
+                "bbox_max": j.bbox_max,
+                "status": j.status,
+                "created_at": j.created_at.isoformat() if j.created_at else None,
+                "variantes": [
+                    {
+                        "id": str(v.id),
+                        "indice": v.indice,
+                        "name": v.name,
+                        "is_chosen": v.is_chosen,
+                        "a_un_rendu": bool(v.render_dir),
+                        "correspond": v.correspond,
+                        "commentaire": v.commentaire,
+                        "avis_at": v.avis_at.isoformat() if v.avis_at else None,
+                    }
+                    for v in j.variantes if v.design_json is not None
+                ],
+            }
+            for j in s.scalars(stmt.limit(limit).offset(offset)).all()
+        ]
+    return [ligne for ligne in lignes if ligne["variantes"]]
+
+
+@app.post("/api/variantes/{variante_id}/avis")
+def enregistrer_avis(variante_id: str, payload: dict = Body(...)):
+    """Enregistre l'avis de relecture. Un nouvel avis écrase le précédent.
+
+    Idempotent à dessein : on relit, on se corrige, et c'est le dernier avis qui
+    compte. `avis_at` bouge à chaque écriture, donc on sait toujours ce qui a été
+    relu et quand.
+    """
+    avis, erreur = verifier_avis(payload)
+    if erreur:
+        raise HTTPException(400, erreur)
+    correspond, commentaire = avis
+
+    with Session() as s:
+        v = s.get(Variante, variante_id)
+        if v is None:
+            raise HTTPException(404, "Variante introuvable.")
+        v.correspond = correspond
+        v.commentaire = commentaire
+        v.avis_at = datetime.now(UTC)
+        s.commit()
+        return _variante_json(v)
 
 
 def _fichier_de_sortie(relatif, nom_fichier):

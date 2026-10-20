@@ -193,3 +193,48 @@ def refus_de_completion(job):
     if propositions_manquantes(job) == 0:
         return "Toutes les propositions demandées ont abouti."
     return None
+
+
+# --- Avis de relecture ------------------------------------------------------------
+
+# Borne du commentaire libre. Pas une mesure de securite — la colonne est un `text`
+# et Postgres n'en souffrirait pas — mais une borne de bon sens sur une zone de
+# saisie : au-dela, ce n'est plus un avis, c'est un rapport, et sa place est dans
+# docs/mesures.md.
+COMMENTAIRE_MAX = 2000
+
+
+def verifier_avis(payload):
+    """Retourne ((correspond, commentaire), erreur). L'entree vient de l'exterieur.
+
+    `correspond` accepte trois valeurs : True, False, et None quand on ne veut
+    laisser qu'un commentaire sans trancher. Rien d'autre : une chaine « oui » ou un
+    0/1 seraient acceptes par un `bool()` naif et enregistreraient le contraire de
+    ce que la personne a clique.
+
+    Un avis vide des DEUX cotes est refuse. Il n'apporte rien, et comme un nouvel
+    avis ecrase le precedent, l'accepter effacerait un vrai avis sur un clic de
+    travers.
+    """
+    if not isinstance(payload, dict):
+        return None, "Avis illisible."
+
+    correspond = payload.get("correspond")
+    if correspond is not None and not isinstance(correspond, bool):
+        return None, "correspond doit être vrai, faux, ou absent."
+
+    commentaire = payload.get("commentaire")
+    if commentaire is None:
+        commentaire = ""
+    if not isinstance(commentaire, str):
+        return None, "Le commentaire doit être du texte."
+    commentaire = commentaire.strip()
+    if len(commentaire) > COMMENTAIRE_MAX:
+        return None, (f"Commentaire trop long : {len(commentaire)} caractères pour "
+                      f"{COMMENTAIRE_MAX} au maximum.")
+
+    if correspond is None and not commentaire:
+        return None, ("Un avis vide n'apporte rien : dis si ça correspond, ou écris "
+                      "en quoi.")
+
+    return (correspond, commentaire or None), None
