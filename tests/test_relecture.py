@@ -22,7 +22,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from server.regles import COMMENTAIRE_MAX, verifier_avis
+from server.regles import COMMENTAIRE_MAX, VERDICTS, verifier_avis
 
 RACINE = Path(__file__).resolve().parent.parent
 PAGE = RACINE / "server" / "static" / "relecture.html"
@@ -39,16 +39,50 @@ COLONNES_AVIS = ("correspond", "commentaire", "avis_at")
 # --- validation de l'avis ---------------------------------------------------------
 
 def test_un_avis_positif_passe():
-    avis, erreur = verifier_avis({"correspond": True})
+    avis, erreur = verifier_avis({"correspond": "oui"})
     assert erreur is None
-    assert avis == (True, None)
+    assert avis == ("oui", None)
 
 
 def test_un_avis_negatif_avec_sa_raison():
-    avis, erreur = verifier_avis({"correspond": False,
+    avis, erreur = verifier_avis({"correspond": "non",
                                   "commentaire": "  il manque les roues  "})
     assert erreur is None
-    assert avis == (False, "il manque les roues")
+    assert avis == ("non", "il manque les roues")
+
+
+def test_les_trois_verdicts_sont_acceptes():
+    """Un modele n'est pas bon ou mauvais, il ressemble plus ou moins : « partiel »
+    est le cas le plus courant, et un binaire l'aurait perdu."""
+    for verdict in VERDICTS:
+        avis, erreur = verifier_avis({"correspond": verdict,
+                                      "commentaire": "la silhouette est bonne"})
+        assert erreur is None, f"{verdict} refuse : {erreur}"
+        assert avis[0] == verdict
+
+
+def test_les_verdicts_vont_du_meilleur_au_pire():
+    """L'ordre n'est pas cosmetique : c'est celui du classement. Un verdict gradue
+    rend la correlation de rang calculable sur une variante seule, la ou un binaire
+    obligerait a ne comparer que des paires."""
+    assert VERDICTS == ("oui", "partiel", "non")
+
+
+def test_partiellement_exige_une_precision():
+    """« Partiellement » sans precision ne dit rien d'exploitable : partiellement en
+    quoi ? C'est la seule contrainte asymetrique, et c'est voulu."""
+    avis, erreur = verifier_avis({"correspond": "partiel"})
+    assert avis is None
+    assert "précision" in erreur.lower()
+
+
+def test_oui_et_non_se_suffisent_a_eux_memes():
+    """Exiger un commentaire partout couterait du volume de relecture, qui est la
+    ressource rare."""
+    for verdict in ("oui", "non"):
+        avis, erreur = verifier_avis({"correspond": verdict})
+        assert erreur is None, f"{verdict} seul devrait passer"
+        assert avis == (verdict, None)
 
 
 def test_un_commentaire_seul_suffit():
@@ -67,10 +101,11 @@ def test_un_avis_vide_des_deux_cotes_est_refuse():
         assert avis is None and erreur, f"{charge} aurait du etre refuse"
 
 
-def test_correspond_n_accepte_que_des_booleens():
-    """Une chaine « oui » ou un 0/1 passeraient un bool() naif et enregistreraient
-    parfois le contraire de ce qui a ete clique."""
-    for valeur in ("oui", "non", 0, 1, "", []):
+def test_correspond_n_accepte_que_les_trois_verdicts():
+    """Un booleen est refuse EXPRES : « oui » et « partiel » seraient tous deux vrais
+    pour un bool() naif, et l'ancien format binaire enregistrerait silencieusement un
+    « oui » la ou l'utilisateur a clique « partiellement »."""
+    for valeur in (True, False, 0, 1, "peut-etre", "OUI", "", []):
         avis, erreur = verifier_avis({"correspond": valeur})
         assert avis is None and erreur, f"correspond={valeur!r} aurait du etre refuse"
 
@@ -161,6 +196,24 @@ def test_la_page_propose_de_ne_voir_que_ce_qui_reste_a_relire():
     """C'est ce qui la rend utilisable au volume : sans ce filtre, on relit deux fois
     les memes et jamais les nouvelles."""
     assert "sans_avis" in _script_de_la_page()
+
+
+def test_la_page_propose_les_trois_verdicts_dans_le_meme_ordre_que_le_serveur():
+    """La liste est recopiee dans la page : impossible de l'importer depuis
+    server/regles.py sans chaine de build. C'est ce test qui rend la duplication
+    sure — et l'ordre compte, c'est celui du classement."""
+    source = _script_de_la_page()
+    positions = [source.find(f'valeur: "{v}"') for v in VERDICTS]
+    assert all(p != -1 for p in positions), f"verdict absent de la page : {positions}"
+    assert positions == sorted(positions), "la page n'ordonne pas comme le serveur"
+
+
+def test_la_page_annonce_la_precision_exigee_par_partiel():
+    """Sinon l'utilisateur clique « partiellement », enregistre, et bute sur un 400
+    qu'il n'avait aucun moyen de prevoir."""
+    html = PAGE.read_text(encoding="utf-8")
+    assert "'partiel'" in html, "la page n'applique pas la regle du partiel"
+    assert "Précise ce qui correspond" in html
 
 
 def test_le_bouton_enregistrer_applique_la_meme_regle_que_le_serveur():

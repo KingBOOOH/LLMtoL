@@ -93,13 +93,17 @@ CREATE TABLE variantes (
     is_rejected boolean NOT NULL DEFAULT false,
 
     -- Avis de relecture : ce rendu correspond-il a la demande, et sinon en quoi.
-    -- TROIS etats pour `correspond` : true, false, et NULL tant que la variante n'a
-    -- pas ete relue. Une relecture pas encore faite n'est pas un « non », et c'est
-    -- ce troisieme etat qui permet de lister ce qui reste a relire.
+    -- QUATRE etats pour `correspond` : oui / partiel / non, ordonnes du meilleur au
+    -- pire, et NULL tant que la variante n'a pas ete relue. Une relecture pas encore
+    -- faite n'est pas un « non », et c'est cet etat qui permet de lister ce qui reste
+    -- a relire.
+    -- Trois verdicts et non un booleen : un modele n'est pas bon ou mauvais, il
+    -- ressemble plus ou moins, et « partiel » est le cas le plus courant. Un verdict
+    -- GRADUE rend aussi la correlation de rang calculable sur une variante seule.
     -- Le commentaire libre est la vraie matiere : un choix de variante dit « A
     -- plutot que B », lui seul dit CE QUI est faux. Les memes colonnes sont ajoutees
     -- par server.db.assurer_schema() pour une base deja en service.
-    correspond   boolean,
+    correspond   text CHECK (correspond IN ('oui', 'partiel', 'non')),
     commentaire  text,
     avis_at      timestamptz,
 

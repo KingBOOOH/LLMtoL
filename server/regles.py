@@ -203,25 +203,48 @@ def refus_de_completion(job):
 # docs/mesures.md.
 COMMENTAIRE_MAX = 2000
 
+# Verdicts possibles, DU MEILLEUR AU PIRE — l'ordre est signifiant et sert au
+# classement, pas seulement a l'affichage.
+#
+# Pourquoi trois et pas deux : un modele LEGO n'est pas bon ou mauvais, il ressemble
+# plus ou moins. « La silhouette est bonne mais il manque les roues » n'est ni un oui
+# ni un non, et le forcer dans un binaire perd l'information la plus courante.
+#
+# Trois valeurs nommees, et NON une note : une echelle numerique saisie a la main
+# derive d'une session a l'autre (ce que « 6 » veut dire aujourd'hui n'est pas ce
+# qu'il voudra dire dans un mois), trois etiquettes non. Le projet a deja mesure que
+# le bareme n'est pas le levier.
+#
+# Benefice de mesure, et c'est le vrai gain : un verdict GRADUE rend la correlation
+# de rang calculable sur une variante seule. Un binaire ne donne que deux rangs et
+# obligerait a ne comparer que des paires.
+VERDICTS = ("oui", "partiel", "non")
+
 
 def verifier_avis(payload):
     """Retourne ((correspond, commentaire), erreur). L'entree vient de l'exterieur.
 
-    `correspond` accepte trois valeurs : True, False, et None quand on ne veut
-    laisser qu'un commentaire sans trancher. Rien d'autre : une chaine « oui » ou un
-    0/1 seraient acceptes par un `bool()` naif et enregistreraient le contraire de
-    ce que la personne a clique.
+    `correspond` vaut l'un de VERDICTS, ou None quand on ne veut laisser qu'un
+    commentaire sans trancher. Rien d'autre, et surtout pas un booleen : « oui » et
+    « partiel » seraient tous deux vrais pour un `bool()` naif.
 
     Un avis vide des DEUX cotes est refuse. Il n'apporte rien, et comme un nouvel
     avis ecrase le precedent, l'accepter effacerait un vrai avis sur un clic de
     travers.
+
+    « partiel » EXIGE un commentaire, les deux autres non. C'est la seule contrainte
+    asymetrique, et elle se justifie : « partiellement » sans precision ne dit rien
+    d'exploitable — partiellement en quoi ? — alors que « oui » et « non » se
+    suffisent a eux-memes. Exiger un commentaire partout couterait du volume de
+    relecture, qui est la ressource rare.
     """
     if not isinstance(payload, dict):
         return None, "Avis illisible."
 
     correspond = payload.get("correspond")
-    if correspond is not None and not isinstance(correspond, bool):
-        return None, "correspond doit être vrai, faux, ou absent."
+    if correspond is not None and correspond not in VERDICTS:
+        return None, ("correspond doit valoir « " + " », « ".join(VERDICTS)
+                      + " », ou être absent.")
 
     commentaire = payload.get("commentaire")
     if commentaire is None:
@@ -236,5 +259,9 @@ def verifier_avis(payload):
     if correspond is None and not commentaire:
         return None, ("Un avis vide n'apporte rien : dis si ça correspond, ou écris "
                       "en quoi.")
+
+    if correspond == "partiel" and not commentaire:
+        return None, ("« Partiellement » demande une précision : qu'est-ce qui "
+                      "correspond, et qu'est-ce qui ne correspond pas ?")
 
     return (correspond, commentaire or None), None

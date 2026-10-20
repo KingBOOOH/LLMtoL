@@ -24,7 +24,7 @@
     --fond: #1b1d22; --carte: #24262c; --carte-haut: #2b2d33;
     --bord: #353841; --texte: #e8e9ec; --doux: #9a9ea8;
     --accent: #ffcf3f; --accent-texte: #2a2200;
-    --ok: #4ec37a; --erreur: #e5574f;
+    --ok: #4ec37a; --alerte: #e8a33d; --erreur: #e5574f;
     --rayon: 10px;
   }
   * { box-sizing: border-box; }
@@ -47,10 +47,17 @@
   button:hover { background: var(--carte-haut); }
   button.actif { background: var(--accent); color: var(--accent-texte);
                  border-color: var(--accent); font-weight: 600; }
-  button.oui.choisi { background: var(--ok); border-color: var(--ok); color: #0a2414;
-                      font-weight: 600; }
-  button.non.choisi { background: var(--erreur); border-color: var(--erreur);
-                      color: #2a0a08; font-weight: 600; }
+  /* Un verdict retenu se voit a sa couleur, pas a une coche : les trois boutons sont
+     cote a cote et il faut lire lequel est actif d'un coup d'oeil. */
+  button.verdict { font-size: 13px; padding: 6px 11px; }
+  button.verdict.choisi { font-weight: 600; }
+  button.verdict.oui.choisi { background: var(--ok); border-color: var(--ok);
+                              color: #0a2414; }
+  button.verdict.partiel.choisi { background: var(--alerte);
+                                  border-color: var(--alerte); color: #2a1c00; }
+  button.verdict.non.choisi { background: var(--erreur); border-color: var(--erreur);
+                              color: #2a0a08; }
+  .exigence { font-size: 12px; color: var(--alerte); margin: 6px 0 0; }
 
   .demande { background: var(--carte); border: 1px solid var(--bord);
              border-radius: var(--rayon); padding: 18px 20px; margin-bottom: 20px; }
@@ -131,18 +138,20 @@
         </div>
 
         <div class="ligne">
-          <button class="oui" :class="{ choisi: brouillon(v).correspond === true }"
-                  @click="brouillon(v).correspond = brouillon(v).correspond === true ? null : true">
-            Ça correspond
-          </button>
-          <button class="non" :class="{ choisi: brouillon(v).correspond === false }"
-                  @click="brouillon(v).correspond = brouillon(v).correspond === false ? null : false">
-            Ça ne correspond pas
-          </button>
+          <button v-for="o in VERDICTS" :key="o.valeur" class="verdict"
+                  :class="[o.valeur, { choisi: brouillon(v).correspond === o.valeur }]"
+                  @click="choisir(v, o.valeur)">{{ o.libelle }}</button>
         </div>
 
         <textarea v-model="brouillon(v).commentaire"
-                  placeholder="En quoi ? Ex. : il manque les roues, le toit est plat, les proportions sont écrasées."></textarea>
+                  placeholder="En quoi ? Ex. : la silhouette est bonne mais il manque les roues, le toit est plat, les proportions sont écrasées."></textarea>
+        <!-- « Partiellement » sans precision ne dit rien d'exploitable : partiellement
+             en quoi ? Le serveur le refuse, on l'annonce ici plutot que de laisser
+             l'utilisateur buter sur un 400. -->
+        <p v-if="brouillon(v).correspond === 'partiel' && !brouillon(v).commentaire.trim()"
+           class="exigence">
+          Précise ce qui correspond et ce qui ne correspond pas.
+        </p>
 
         <div class="pied">
           <span class="relu">
@@ -168,9 +177,18 @@
 <script>
 const PAR_PAGE = 20;
 
+// Memes valeurs que server/regles.VERDICTS, et dans le MEME ORDRE : du meilleur au
+// pire. L'ordre n'est pas cosmetique, c'est celui qui servira au classement.
+const VERDICTS = [
+  { valeur: "oui", libelle: "Ça correspond" },
+  { valeur: "partiel", libelle: "Partiellement" },
+  { valeur: "non", libelle: "Ça ne correspond pas" },
+];
+
 Vue.createApp({
   data() {
     return {
+      VERDICTS,
       demandes: [], brouillons: {}, sansAvis: false,
       chargement: true, erreur: "", offset: 0, encore: false,
     };
@@ -190,10 +208,19 @@ Vue.createApp({
       }
       return this.brouillons[v.id];
     },
-    /** Meme regle que server/regles.verifier_avis : un avis vide des deux cotes
-     *  n'apporte rien. Verifiee ici pour griser le bouton, et la-bas pour de vrai. */
+    /** Reclique sur le verdict deja retenu = on le retire. Sans ca, un clic de
+     *  travers serait definitif : il n'y a pas de bouton « aucun avis ». */
+    choisir(v, valeur) {
+      const b = this.brouillon(v);
+      b.correspond = b.correspond === valeur ? null : valeur;
+    },
+    /** Memes regles que server/regles.verifier_avis : un avis vide des deux cotes
+     *  n'apporte rien, et « partiel » exige une precision. Verifiees ici pour griser
+     *  le bouton, et la-bas pour de vrai. */
     aQuoiDire(b) {
-      return b.correspond !== null || b.commentaire.trim().length > 0;
+      const dit = b.commentaire.trim().length > 0;
+      if (b.correspond === "partiel") return dit;
+      return b.correspond !== null || dit;
     },
     dateCourte(iso) {
       if (!iso) return "";

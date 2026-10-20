@@ -344,8 +344,10 @@ Docker                            Hôte Windows
 ### Planche de relecture
 
 `/ui/relecture` montre les générations passées avec leur prompt et leurs rendus, et
-recueille pour chacune un avis : **est-ce que ça correspond à la demande, et sinon en
-quoi**. C'est le « en quoi » qui vaut — un choix de variante dit seulement laquelle est
+recueille pour chacune un avis — **oui**, **partiellement** ou **non** — et, surtout,
+**en quoi**. Trois verdicts et non deux : un modèle n'est pas bon ou mauvais, il
+ressemble plus ou moins, et « partiellement » est le cas le plus courant. « Partiellement »
+exige d'ailleurs une précision, sans quoi il ne dit rien d'exploitable. C'est le « en quoi » qui vaut — un choix de variante dit seulement laquelle est
 la moins mauvaise, un commentaire dit *ce qui* est faux. Ces avis sont la vérité terrain
 qui manquait pour calibrer une mesure de similarité sémantique (issue #31).
 
