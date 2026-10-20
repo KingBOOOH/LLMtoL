@@ -204,7 +204,7 @@ def voxel_iou_oriente(grid_a, grid_b):
     Pourquoi cette metrique existe, en plus de voxel_iou : les prompts du jeu de test
     n'imposent aucune orientation. « Un escalier de 5 marches » ne dit pas vers ou il
     monte. Or voxel_iou recadre sur le contenu mais ne tourne pas : un escalier
-    parfaitement correct, construit dans l'autre sens, est punі comme une erreur.
+    parfaitement correct, construit dans l'autre sens, est puni comme une erreur.
 
     Mesure qui l'a revelee : prim_escalier, le pire cas du jeu. A hauteur corrigee,
     voxel_iou donne 0.429 et voxel_iou_oriente donne 1.000 — la forme etait exacte, la

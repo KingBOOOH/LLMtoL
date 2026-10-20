@@ -10,6 +10,13 @@ from urllib.parse import urlsplit, urlunsplit
 
 import requests
 
+# Sortie REDIRIGEE sous Windows = cp1252, qui ne sait pas ecrire le "⚠" des
+# avertissements ni un tiret demi-cadratin : le diagnostic plantait au lieu de
+# diagnostiquer, et seulement quand on le journalisait. Meme patron que lego.py,
+# agent.py et pipeline.py.
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 from src.catalog import LDRAW_CANDIDATE_DIRS, _find_ldraw_library
@@ -146,10 +153,16 @@ def check_truncation():
     diagnostic a etre vulnerable au piege LM Studio, donc la seule capable de le
     detecter. Son contenu est inspecte par detect_default_override.
     """
+    # La demande doit tenir LARGEMENT sous max_tokens, sinon le controle se declenche
+    # sur lui-meme. Version precedente : "at least 300 words" sous un plafond de 400
+    # jetons — or 300 mots anglais en pesent 375 a 450. Le portail passait ou echouait
+    # au hasard (mesure : 373 jetons et "stop" le matin, "length" l'apres-midi, meme
+    # modele, meme contexte) et bloquait alors toute generation en accusant a tort la
+    # longueur de contexte. ~80 mots laissent une marge de 3x.
     payload = {
         "model": config.LM_STUDIO_MODEL,
         "messages": [
-            {"role": "user", "content": "Write a random paragraph of at least 300 words about bricks."}
+            {"role": "user", "content": "Write a short paragraph of about 80 words about bricks."}
         ],
         "max_tokens": 400,
         "temperature": 0.5,
@@ -191,7 +204,10 @@ def preflight_llm():
                        f"  Reponse recue : {res['content_preview']!r}\n{FIX_OVERRIDE}")
     if res.get("finish_reason") != "stop":
         return False, (f"finish_reason={res['finish_reason']!r} au lieu de 'stop' — "
-                       "reponse tronquee, augmenter la longueur de contexte du modele")
+                       f"reponse coupee a {res.get('completion_tokens')} jetons. Verifier "
+                       "le plafond max_tokens de la requete AVANT la longueur de contexte "
+                       "du modele : une demande trop longue pour son propre plafond se "
+                       "coupe toute seule, contexte intact.")
     return True, "LM Studio repond normalement a une requete non contrainte"
 
 
