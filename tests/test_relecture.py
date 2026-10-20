@@ -182,9 +182,18 @@ def test_on_atteint_la_relecture_depuis_le_panneau_principal():
     la route disparaissait, le lien donnerait un 404 — d'ou la verification des deux
     cotes, le seul test possible sur l'hote ou fastapi n'est pas installe.
     """
-    assert 'href="/ui/relecture"' in INDEX.read_text(encoding="utf-8")
+    index = INDEX.read_text(encoding="utf-8")
+    assert 'href="/ui/relecture"' in index
     app = (RACINE / "server" / "app.py").read_text(encoding="utf-8")
     assert '@app.get("/ui/relecture"' in app, "la route sans extension a disparu"
+
+    # Deux entrees, et les deux comptent : la pastille d'en-tete est la navigation,
+    # le lien de la rangee de titre est au-dessus des generations passees — le seul
+    # endroit ou « relire » veut dire quelque chose. En en-tete seule, elle avait
+    # l'allure d'un badge d'etat a cote de celui de l'agent, et passait inapercue.
+    assert 'class="lien-action" href="/ui/relecture"' in index, \
+        "plus de lien dans le corps de la page de generation"
+    assert index.count('href="/ui/relecture"') >= 2
 
 
 def test_la_saisie_ne_vit_pas_dans_la_reponse_de_l_api():
