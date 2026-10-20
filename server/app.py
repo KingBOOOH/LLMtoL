@@ -530,6 +530,24 @@ def design(job_id: str):
         return retenue.design_json
 
 
+@app.get("/ui/relecture", include_in_schema=False)
+def ui_relecture():
+    """Sert la planche de relecture sur une URL sans extension.
+
+    StaticFiles ne rend une URL sans extension que pour l'index.html d'un DOSSIER :
+    c'est pourquoi /ui/ marche. Obtenir /ui/relecture par le seul montage obligerait
+    donc a enterrer la page dans server/static/relecture/index.html — un dossier par
+    page, et un deuxieme fichier nomme index.html dans l'arborescence. Quatre lignes
+    ici coutent moins, et le fichier reste nomme d'apres ce qu'il est.
+
+    Declaree AVANT le montage : les routes sont essayees dans l'ordre d'ajout, et le
+    montage /ui capterait sinon cette URL pour repondre 404. /ui/relecture.html
+    continue de fonctionner, servi par le montage.
+    """
+    return FileResponse(os.path.join(STATIC_DIR, "relecture.html"),
+                        media_type="text/html")
+
+
 @app.get("/", include_in_schema=False)
 def racine():
     return RedirectResponse("/ui/")

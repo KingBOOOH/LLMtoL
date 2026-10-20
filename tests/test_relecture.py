@@ -175,8 +175,16 @@ def test_le_bouton_enregistrer_applique_la_meme_regle_que_le_serveur():
 
 
 def test_on_atteint_la_relecture_depuis_le_panneau_principal():
-    """Une page qu'aucun lien ne designe n'existe pas pour l'utilisateur."""
-    assert "/ui/relecture.html" in INDEX.read_text(encoding="utf-8")
+    """Une page qu'aucun lien ne designe n'existe pas pour l'utilisateur.
+
+    Le lien pointe l'URL sans extension, qui n'existe que par une route explicite de
+    server/app.py : StaticFiles ne rendrait /ui/relecture que depuis un dossier. Si
+    la route disparaissait, le lien donnerait un 404 — d'ou la verification des deux
+    cotes, le seul test possible sur l'hote ou fastapi n'est pas installe.
+    """
+    assert 'href="/ui/relecture"' in INDEX.read_text(encoding="utf-8")
+    app = (RACINE / "server" / "app.py").read_text(encoding="utf-8")
+    assert '@app.get("/ui/relecture"' in app, "la route sans extension a disparu"
 
 
 def test_la_saisie_ne_vit_pas_dans_la_reponse_de_l_api():
