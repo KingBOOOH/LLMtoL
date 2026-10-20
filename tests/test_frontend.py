@@ -504,3 +504,50 @@ def test_le_pourcentage_de_remplissage_s_arrondit_pareil():
     py, js = _les_deux(fill_rate=0.875)
     assert "88%" in py[0]
     assert py == js
+
+
+# --- Cas limites des fonctions d'affichage (US V2-10) -----------------------------
+#
+# Les valeurs que l'API peut legitimement envoyer avant qu'une etape soit connue :
+# un total nul, un champ absent, une liste vide, un statut qu'on n'a pas prevu. Ce
+# sont les entrees ou un defaut est SILENCIEUX — la page s'affiche, mais elle ment.
+
+
+@sans_node
+@pytest.mark.parametrize("job, attendu", [
+    ({"etape_total": 0, "etape_fait": 0}, None),
+    ({"etape_total": None, "etape_fait": 3}, None),
+    ({}, None),
+    ({"etape_total": 4, "etape_fait": 1}, 25),
+    ({"etape_total": 3, "etape_fait": 9}, 100),
+])
+def test_pourcent_ne_divise_pas_par_zero_et_plafonne_a_cent(job, attendu):
+    """`null` fait passer la barre en indetermine ; un nombre la remplit.
+
+    Un total a zero donnerait Infinity ou NaN, affiche tel quel dans la page. Et un
+    fait superieur au total (reprise apres interruption) depasserait la barre.
+    """
+    assert _executer(f"return opt.methods.pourcent({json.dumps(job)});") == attendu
+
+
+@sans_node
+@pytest.mark.parametrize("job", [{"variantes": []}, {}])
+def test_un_job_sans_variante_retenue_n_avertit_de_rien(job):
+    """`retenueDe` rend null, et avertissements doit s'arreter la plutot que de lire
+    des champs sur null — ce qui viderait la page entiere, Vue stoppant le rendu."""
+    assert _executer(f"""
+      const ctx = Object.create(opt.methods);
+      return opt.methods.avertissements.call(ctx, {json.dumps(job)});
+    """) == []
+
+
+@sans_node
+def test_un_statut_inconnu_s_affiche_tel_quel_sans_casser():
+    """Un statut ajoute cote serveur et pas encore traduit ici doit se voir, pas
+    disparaitre : une case vide dans l'historique ne se diagnostique pas."""
+    resultat = _executer("""
+      return { libelle: opt.methods.libelle('statut_invente'),
+               classe: opt.methods.classeEtat('statut_invente') };
+    """)
+    assert resultat["libelle"] == "statut_invente"
+    assert resultat["classe"] == ""

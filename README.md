@@ -1204,7 +1204,7 @@ pip install -r requirements-dev.txt
 
 python -m ruff check .        # linter + tri des imports
 python -m ruff check . --fix  # corrige ce qui est sûr
-python -m pytest tests/ -q    # 259 tests
+python -m pytest tests/ -q    # 315 tests
 ```
 
 Le linter garde le jeu de règles **par défaut** de `ruff` plutôt qu'une sélection
@@ -1230,8 +1230,23 @@ se verrait sinon qu'à l'exécution, sous la forme d'un bouton qui ne fait rien.
 L'interface elle-même est vérifiée en chargeant son vrai script avec un `Vue.createApp`
 de substitution : le framework est absent, le code testé est bien celui du fichier servi.
 `node` sert là d'interpréteur de vérification, pas de dépendance du projet — l'image ne
-contient toujours pas node et ces tests se sautent s'il manque. Un harnais frontend
-complet reste à faire (US V2-10).
+contient toujours pas node et ces tests se sautent s'il manque.
+
+**La décision node a été tranchée explicitement (US V2-10) : node n'entre pas dans le
+projet.** Pas de `package.json`, pas de `node_modules`, pas de seconde commande de test —
+`python -m pytest tests/ -q` lance aussi les tests d'interface, et les saute si node
+n'est pas installé. Ce que ça coûte : on ne teste que des fonctions pures, pas le rendu
+Vue. Ce que ça évite : une chaîne de build dans un projet qui a quatre dépendances.
+
+Ces tests couvrent les fonctions où un défaut est **silencieux** — la page s'affiche et
+elle ment : `pourcent()` (barre indéterminée plutôt qu'un pourcentage inventé, jamais de
+division par zéro), `placeDansLaFile()`, `actif()` (ce qui travaille passe avant ce qui
+attend) et `avertissements()`. Cette dernière **refait en JavaScript** la traduction de
+`src/validator.resume_constructibilite`, parce que l'image de l'API ne voit pas `src/` :
+neuf tests comparent les sorties des deux implémentations sur les mêmes métriques — les
+quatre phrases, leur ordre, le seuil de remplissage et jusqu'à l'arrondi du pourcentage,
+où `:.0%` et `Math.round` suivent des règles différentes. La duplication est imposée par
+le déploiement ; c'est le test qui la rend sûre, comme pour `BBOX_MAX`.
 
 Trois d'entre eux valent d'être signalés : l'un verrouille le fait que le DSL exprime
 *exactement* un cylindre ou une sphère (IoU aller-retour = 1,0), l'autre que resserrer
