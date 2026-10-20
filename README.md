@@ -168,7 +168,9 @@ fond configuré, pour 51 s sur un modèle de 1267 pièces.
 
 La section précédente dit dans quel **ordre** les étapes s'enchaînent. Celle-ci dit où
 chaque donnée **atterrit**, qui a le droit de l'écrire, et ce qu'on peut perdre sans
-dommage. Trois questions pratiques : qu'est-ce qu'il faut sauvegarder, qu'est-ce qui se
+dommage. Pour les **types exacts et des exemples réels** à chaque frontière — ce que
+contient précisément un `design.json`, la forme du tableau de voxels, le décodage d'une
+ligne `.ldr` — voir [docs/flux_donnees.md](docs/flux_donnees.md). Trois questions pratiques : qu'est-ce qu'il faut sauvegarder, qu'est-ce qui se
 reconstruit tout seul, et pourquoi tel composant ne peut pas tourner ailleurs.
 
 ### Ce qui traverse la chaîne
