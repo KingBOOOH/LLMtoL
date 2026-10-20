@@ -28,10 +28,22 @@ Objet : <nom court de l'objet>
 Boite englobante : <X> tenons (L) x <Y> tenons (l) x <Z> plates (H)
 Symetrie : <axe miroir si pertinent, sinon "aucune">
 Sections :
-  1. <nom section>   z=0..<fin>   <description courte : pleine/creuse, forme, position>
-  2. <nom section>   z=<debut>..<fin>   <description>
+  1. <nom section>   X=<x0>..<x1> Y=<y0>..<y1> z=0..<fin>   <description courte : pleine/creuse, forme>
+  2. <nom section>   X=<x0>..<x1> Y=<y0>..<y1> z=<debut>..<fin>   <description>
   ...
 Palette : <section>=<couleur>, <section>=<couleur>, ...
+
+SECTIONS ARE NOT A VERTICAL STACK. Each section has its own FOOTPRINT (X and Y) as
+well as its own height range, and sections MAY — and often MUST — overlap in z. Two
+sections that stand SIDE BY SIDE share the same z range and differ in X/Y. Only sections
+that genuinely sit ON TOP of each other get consecutive z ranges.
+  Example, a castle with four corner towers: the towers and the curtain wall all rise
+  from the ground to the top, so they SHARE the same z range (e.g. z=0..40) and are told
+  apart by their footprints — each tower occupies one corner of the plan, the wall runs
+  along the edges between them. Writing the towers as z=0..20 and the wall as z=21..40
+  would stack the wall on top of the towers and produce a table, not a castle.
+  Before writing a section, ask: does this part stand BESIDE the previous one, or ON TOP
+  of it? Beside means the same z range.
 
 Keep it concise (usually 4-8 sections). Respond in French. Do not output JSON, code,
 or markdown formatting — plain structured text only, exactly as shown above.
