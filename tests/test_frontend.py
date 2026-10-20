@@ -16,11 +16,13 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import unicodedata
 from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from src.validator import resume_constructibilite
 
 INDEX = Path(__file__).resolve().parent.parent / "server" / "static" / "index.html"
 NODE = shutil.which("node")
@@ -399,3 +401,106 @@ def test_la_taille_exacte_et_la_taille_nommee_s_excluent():
     assert 'bbox_max: this.taille === "exacte" ? this.bboxMax : null' in script, \
         "la borne ne doit partir QUE si « exacte » est choisi"
     assert "bboxMax:" in script, "l'etat initial doit declarer bboxMax"
+
+
+# --- Avertissements de constructibilite (US V2-10) --------------------------------
+#
+# server/static/index.html REFAIT en JavaScript la traduction de
+# src/validator.resume_constructibilite, parce que l'image de l'API ne contient que
+# server/ (Dockerfile.api) et ne voit donc pas src/. Les deux formulations doivent
+# rester alignees, et rien ne le garantissait cote JavaScript : changer une phrase
+# d'un seul cote passait tous les tests.
+#
+# Ces tests comparent les SORTIES des deux implementations sur les memes metriques,
+# plutot que de relire les deux textes. Meme principe que le test qui compare
+# BBOX_MAX entre src/dsl_schema et server/regles : c'est le test qui rend la
+# duplication sure, pas la bonne volonte.
+
+
+def _sans_accents(phrase):
+    """L'interface accentue ses phrases, le code Python du projet non.
+
+    La difference est voulue et ne doit pas faire echouer la comparaison : on compare
+    le TEXTE, pas l'orthotypographie.
+    """
+    return "".join(c for c in unicodedata.normalize("NFD", phrase)
+                   if unicodedata.category(c) != "Mn")
+
+
+def _les_deux(n_components=1, z_min=0, n_floating=0, fill_rate=0.4):
+    """Passe les memes metriques aux deux implementations. Retourne (python, js).
+
+    Cote Python le compte des flottantes se lit sur la LISTE `flottantes`, cote
+    JavaScript sur l'entier `n_floating` que l'API a deja compte (agent.py le derive
+    des avertissements du rapport). D'ou la liste factice : ce qui est compare est la
+    phrase produite, pas la facon de compter.
+    """
+    py = resume_constructibilite({"metrics": {
+        "n_components": n_components, "z_min": z_min,
+        "flottantes": [[0, 0, 0]] * n_floating, "fill_rate": fill_rate,
+    }})["phrases"]
+
+    # Un vrai job, pour que retenueDe fasse son travail au lieu d'etre court-circuite.
+    job = {"variantes": [
+        {"id": "v1", "is_chosen": False, "n_components": 99, "z_min": 99,
+         "n_floating": 99, "fill_rate": 0.99},
+        {"id": "v2", "is_chosen": True, "n_components": n_components, "z_min": z_min,
+         "n_floating": n_floating, "fill_rate": fill_rate},
+    ]}
+    js = _executer(f"""
+      const ctx = Object.create(opt.methods);
+      return opt.methods.avertissements.call(ctx, {json.dumps(job)});
+    """)
+    return [_sans_accents(p) for p in py], [_sans_accents(p) for p in js]
+
+
+@sans_node
+def test_un_modele_sain_n_avertit_de_rien_des_deux_cotes():
+    """Une liste vide doit rester vide : l'appelant dit alors explicitement que tout
+    va bien, plutot que d'afficher un encadre vide."""
+    py, js = _les_deux()
+    assert py == []
+    assert js == []
+
+
+@sans_node
+@pytest.mark.parametrize("metriques", [
+    {"n_components": 3},
+    {"z_min": 2},
+    {"n_floating": 5},
+    {"fill_rate": 0.92},
+])
+def test_chaque_avertissement_est_formule_pareil_des_deux_cotes(metriques):
+    """Pris un par un, pour que l'echec designe l'avertissement qui a divergé."""
+    py, js = _les_deux(**metriques)
+    assert len(py) == 1, f"cas {metriques} : le Python n'avertit pas"
+    assert py == js
+
+
+@sans_node
+def test_les_avertissements_sortent_dans_le_meme_ordre():
+    """L'ordre est ce que l'utilisateur lit en premier : il fait partie du contrat."""
+    py, js = _les_deux(n_components=2, z_min=3, n_floating=7, fill_rate=0.9)
+    assert len(py) == 4
+    assert py == js
+
+
+@sans_node
+@pytest.mark.parametrize("taux, avertit", [(0.85, False), (0.86, True)])
+def test_le_seuil_de_remplissage_est_le_meme_des_deux_cotes(taux, avertit):
+    """85 % exactement ne declenche rien : le seuil est STRICT des deux cotes. Un
+    `>=` glisse d'un seul cote ferait avertir l'interface et pas le rapport."""
+    py, js = _les_deux(fill_rate=taux)
+    assert bool(py) is avertit
+    assert py == js
+
+
+@sans_node
+def test_le_pourcentage_de_remplissage_s_arrondit_pareil():
+    """Python formate avec `:.0%`, le JavaScript avec Math.round : deux regles
+    d'arrondi differentes (pair le plus proche contre superieur). 0,875 est la seule
+    valeur exactement a mi-chemin representable au-dessus du seuil — les deux doivent
+    y tomber d'accord."""
+    py, js = _les_deux(fill_rate=0.875)
+    assert "88%" in py[0]
+    assert py == js
