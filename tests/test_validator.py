@@ -197,6 +197,53 @@ def test_floating_pieces_warn_but_do_not_block():
     assert any("flottante" in w for w in report["warnings"])
 
 
+def _toit_creux(taille):
+    """Boite creuse coiffee d'un toit plat : des plaques centrales n'ont rien sous
+    leur emprise, donc des flottantes, en nombre croissant avec la taille."""
+    n = taille - 1
+    return _design([taille, taille, 4], [
+        {"op": "box", "from": [0, 0, 0], "to": [n, n, 2], "color": "tan"},
+        {"op": "carve", "from": [1, 1, 1], "to": [n - 1, n - 1, 2]},
+        {"op": "box", "from": [0, 0, 3], "to": [n, n, 3], "color": "red"},
+    ])
+
+
+def test_flottantes_penalisees_au_taux_et_non_au_nombre():
+    """A taux de defaut comparable, agrandir un modele ne doit pas baisser son score.
+
+    L'ancienne formule retirait 5 points PAR piece flottante, plafonnes a -20. Un
+    modele atteignait donc le plafond des qu'il avait 4 flottantes, ce qui arrive
+    mecaniquement quand il grossit, alors qu'un modele de 7 pieces ne pouvait pas
+    structurellement l'atteindre. Mesure : 73,7 pour le 20x20 contre 77,0 pour le
+    14x14 — le plus gros etait classe derriere pour un taux de defaut equivalent.
+    """
+    rapports = {}
+    for taille in (14, 20):
+        design = _toit_creux(taille)
+        voxels = compile_design(design)
+        placements = tile(voxels)
+        rapports[taille] = validate(voxels, placements, design)
+
+    petit, grand = rapports[14], rapports[20]
+    flottantes = {t: sum(1 for w in r["warnings"] if "flottante" in w)
+                  for t, r in rapports.items()}
+
+    # Premisse du test : le grand a bien PLUS de flottantes en nombre absolu, et
+    # depasse le plafond de 4 — sans quoi l'ancienne formule ne serait pas en cause.
+    assert flottantes[20] > flottantes[14] >= 1, flottantes
+    assert flottantes[20] >= 4, flottantes
+    assert grand["errors"] == [] and petit["errors"] == []
+
+    # ... pour un taux comparable : c'est ce qui rend la comparaison legitime.
+    taux = {t: flottantes[t] / r["metrics"]["n_pieces"] for t, r in rapports.items()}
+    assert abs(taux[20] - taux[14]) < 0.05, taux
+
+    # L'invariant. Avec le compte plafonne, grand["score"] valait 73,7 et ne pouvait
+    # pas depasser 80 ; il est maintenant au-dessus du petit.
+    assert grand["score"] >= petit["score"], (petit["score"], grand["score"])
+    assert grand["score"] > 80, grand["score"]
+
+
 def test_validate_end_to_end_score_is_bounded():
     design = _design([4, 4, 2], [{"op": "box", "from": [0, 0, 0], "to": [3, 3, 0], "color": "red"}])
     voxels = compile_design(design)

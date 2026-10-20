@@ -297,6 +297,7 @@ def validate(voxels, placements, design):
     com_warnings = check_center_of_mass(voxels)
     z_min, ground_warnings = check_ground_contact(voxels)
     joints_rate = joint_alignment_rate(placements) if placements else 0.0
+    floating_rate = len(floating_errors) / len(placements) if placements else 0.0
 
     # "piece flottante" est un AVERTISSEMENT, pas un bloquant — ecart assume avec la
     # table du plan. Raison mesuree : le controle par piece ("rien juste en-dessous de
@@ -313,7 +314,13 @@ def validate(voxels, placements, design):
     score = 100.0
     score -= 100 if empty_errors else 0
     score -= 15 * min(len(collision_errors), 4)
-    score -= 5 * min(len(floating_errors), 4)
+    # TAUX, et non compte plafonne : a 5 points la piece, un modele de 456 pieces
+    # atteignait le plafond de -20 avec 11 flottantes (2,4 %) quand un modele de 7
+    # pieces ne pouvait structurellement pas l'atteindre. La penalite croissait donc
+    # avec la taille a defaut egal. Mesure sur les 16 rapports archives : +19 points
+    # sur les 5 modeles concernes, aucune regression sur les 11 autres.
+    # Meme poids maximal que joint_alignment_rate, dont c'est le meme patron.
+    score -= 20 * floating_rate
     score -= 25 if n_components > 1 else 0
     score -= 10 if fill_rate > 0.85 else 0
     score -= 10 * min(len(symmetry_warnings), 3)
