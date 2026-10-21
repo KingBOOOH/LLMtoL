@@ -168,7 +168,9 @@ fond configuré, pour 51 s sur un modèle de 1267 pièces.
 
 La section précédente dit dans quel **ordre** les étapes s'enchaînent. Celle-ci dit où
 chaque donnée **atterrit**, qui a le droit de l'écrire, et ce qu'on peut perdre sans
-dommage. Trois questions pratiques : qu'est-ce qu'il faut sauvegarder, qu'est-ce qui se
+dommage. Pour les **types exacts et des exemples réels** à chaque frontière — ce que
+contient précisément un `design.json`, la forme du tableau de voxels, le décodage d'une
+ligne `.ldr` — voir [docs/flux_donnees.md](docs/flux_donnees.md). Trois questions pratiques : qu'est-ce qu'il faut sauvegarder, qu'est-ce qui se
 reconstruit tout seul, et pourquoi tel composant ne peut pas tourner ailleurs.
 
 ### Ce qui traverse la chaîne
@@ -340,6 +342,24 @@ Docker                            Hôte Windows
                                         LM Studio :1234
   outputs/ monté en lecture seule       blender.exe
 ```
+
+### Planche de relecture
+
+`/ui/relecture` montre les générations passées avec leur prompt et leurs rendus, et
+recueille pour chacune un avis — **oui**, **partiellement** ou **non** — et, surtout,
+**en quoi**. Trois verdicts et non deux : un modèle n'est pas bon ou mauvais, il
+ressemble plus ou moins, et « partiellement » est le cas le plus courant. « Partiellement »
+exige d'ailleurs une précision, sans quoi il ne dit rien d'exploitable. C'est le « en quoi » qui vaut — un choix de variante dit seulement laquelle est
+la moins mauvaise, un commentaire dit *ce qui* est faux. Ces avis sont la vérité terrain
+qui manquait pour calibrer une mesure de similarité sémantique (issue #31).
+
+Le score de validité et le nombre de pièces n'y figurent pas, et `/api/relecture` ne les
+renvoie pas : ce sont les deux références triviales qu'une telle mesure devra battre, et
+les afficher pendant la relecture contaminerait l'avis.
+
+Les variantes écartées n'ont plus d'image — l'agent les efface après le choix — mais leur
+`design_json` est conservé, donc leurs rendus se reconstruisent en lot avec
+`python -m tools.render_batch`. L'API ne déclenche jamais Blender.
 
 L'interface affiche une **barre de progression alimentée par des chiffres réels** :
 `design 2/4`, `rendu des étapes 38/46`. La progression du rendu — la phase la plus

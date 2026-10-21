@@ -117,6 +117,23 @@ class Variante(Base):
     render_dir: Mapped[str | None] = mapped_column(Text)
     is_chosen: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_rejected: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # Avis de relecture : est-ce que ce rendu correspond a la demande, et sinon en
+    # quoi. `correspond` a QUATRE etats : les trois verdicts de regles.VERDICTS
+    # (oui / partiel / non, ordonnes du meilleur au pire) et NUL tant que la variante
+    # n'a pas ete relue. Une relecture pas encore faite n'est pas un « non » — sans
+    # cet etat, impossible de savoir ce qui reste a relire, ce qui est l'usage meme
+    # de la planche.
+    # Du texte et non un booleen : un modele n'est pas bon ou mauvais, il ressemble
+    # plus ou moins, et « partiel » est le cas le plus courant. Du texte et non une
+    # note : trois etiquettes ne derivent pas d'une session a l'autre, une echelle
+    # numerique saisie a la main si.
+    # Le commentaire libre est la vraie matiere : une preference dit « A plutot que
+    # B », lui seul dit CE QUI est faux.
+    correspond: Mapped[str | None] = mapped_column(Text)
+    commentaire: Mapped[str | None] = mapped_column(Text)
+    avis_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     pdf: Mapped[bytes | None] = mapped_column(LargeBinary)
     error_message: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),
@@ -170,3 +187,10 @@ def assurer_schema():
         cx.execute(text("CREATE INDEX IF NOT EXISTS jobs_origine_idx "
                         "ON jobs (origine_id)"))
         cx.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS bbox_max integer[]"))
+        # Avis de relecture. Les memes colonnes sont declarees dans db/init.sql pour
+        # un volume neuf ; un test verifie que les deux listes concordent, sinon une
+        # base creee de zero et une base migree divergeraient en silence.
+        cx.execute(text("ALTER TABLE variantes ADD COLUMN IF NOT EXISTS correspond text "
+                        "CHECK (correspond IN ('oui', 'partiel', 'non'))"))
+        cx.execute(text("ALTER TABLE variantes ADD COLUMN IF NOT EXISTS commentaire text"))
+        cx.execute(text("ALTER TABLE variantes ADD COLUMN IF NOT EXISTS avis_at timestamptz"))

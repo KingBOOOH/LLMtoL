@@ -43,6 +43,16 @@
   }
   .point { width: 8px; height: 8px; border-radius: 50%; background: var(--erreur); }
   .point.vivant { background: var(--ok); }
+  a.pastille { text-decoration: none; }
+  a.pastille:hover { background: var(--carte-haut); color: var(--texte); }
+  .coin { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  /* h2 porte deja sa marge basse : la rangee la reprend pour que le lien s'aligne
+     sur le titre sans decaler la liste en dessous. */
+  .titre-rangee { display: flex; align-items: baseline; justify-content: space-between;
+                  gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  .titre-rangee h2 { margin-bottom: 0; }
+  a.lien-action { color: var(--accent); text-decoration: none; font-size: 13px; }
+  a.lien-action:hover { text-decoration: underline; }
 
   .carte {
     background: var(--carte); border: 1px solid var(--bord);
@@ -229,10 +239,14 @@
       <h1>LLM<span>to</span>L</h1>
       <p class="sous">Décris un objet, obtiens un modèle LEGO en vraies pièces.</p>
     </div>
-    <span class="pastille">
-      <span class="point" :class="{ vivant: statut.agent_actif }"></span>
-      {{ statut.agent_actif ? 'Agent ' + statut.agent + ' actif' : 'Aucun agent actif' }}
-    </span>
+    <div class="coin">
+      <a class="pastille" href="/ui/relecture"
+         title="Relire les générations passées et dire si elles correspondent à la demande">Relecture</a>
+      <span class="pastille">
+        <span class="point" :class="{ vivant: statut.agent_actif }"></span>
+        {{ statut.agent_actif ? 'Agent ' + statut.agent + ' actif' : 'Aucun agent actif' }}
+      </span>
+    </div>
   </header>
 
   <div v-if="!statut.agent_actif" class="bandeau alerte">
@@ -466,7 +480,14 @@
 
   <!-- Historique -->
   <section class="carte">
-    <h2>Historique</h2>
+    <!-- Le lien vers la relecture est ICI, au-dessus des generations passees, et pas
+         seulement en pastille d'en-tete : c'est le moment ou l'on regarde ce qui a
+         deja ete produit, donc le seul endroit ou « relire » veut dire quelque chose.
+         En en-tete, il avait l'allure d'un badge d'etat a cote de celui de l'agent. -->
+    <div class="titre-rangee">
+      <h2>Historique</h2>
+      <a class="lien-action" href="/ui/relecture">Relire et dire si ça correspond →</a>
+    </div>
     <div v-if="jobs.length" class="jobs">
      <div v-for="s in series" :key="s.cle" class="serie">
       <p class="titre" v-if="s.essais.length > 1">
