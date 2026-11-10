@@ -13,14 +13,11 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 import tempfile
 from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from server.regles import COMMENTAIRE_MAX, VERDICTS, verifier_avis
 

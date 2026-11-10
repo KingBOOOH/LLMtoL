@@ -12,11 +12,8 @@ conteneur, seulement sur le poste de l'utilisateur.
 
 import importlib
 import os
-import sys
 from pathlib import Path
 from types import SimpleNamespace
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 RACINE = Path(__file__).resolve().parent.parent
 DOCKERFILE = RACINE / "Dockerfile.agent"

@@ -9,10 +9,8 @@ de pieces, les .ldr d'etapes et le HTML.
 """
 
 import os
-import sys
 from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.compiler import compile_design
 from src.instructions import (
     PIECES_PAR_ETAPE,

@@ -9,11 +9,9 @@ tools/calibrer_juge.py, qui a besoin d'un vrai VLM.
 import base64
 import json
 import os
-import sys
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 from src import juge_vlm
 from src.llm_client import _contenu_user, _payload_pour_trace, call_llm

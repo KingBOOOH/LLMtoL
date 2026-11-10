@@ -18,7 +18,6 @@ import math
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.ldraw_writer import write_ldr
 from src.validator import resume_constructibilite
 

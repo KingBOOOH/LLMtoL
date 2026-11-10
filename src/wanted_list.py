@@ -19,7 +19,6 @@ import os
 import sys
 from xml.sax.saxutils import escape
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.catalog import COULEURS_HORS_PRODUCTION, couleur_bricklink, reference_bricklink
 
 # "P" = Part dans la nomenclature des types d'objets BrickLink (S set, P part, M

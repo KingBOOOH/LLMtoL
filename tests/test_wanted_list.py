@@ -7,13 +7,9 @@ ces tests sont ce qui empeche quelqu'un de la "simplifier" plus tard en supposan
 les deux numeros sont toujours egaux.
 """
 
-import os
-import sys
 import xml.etree.ElementTree as ET
 
 import pytest
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.bom import build_bom
 from src.catalog import (

@@ -42,3 +42,7 @@ ignore = [
 
 [tool.ruff.lint.isort]
 known-first-party = ["src", "server", "tools", "config", "pipeline", "agent"]
+
+[tool.pytest.ini_options]
+# Les tests importent src.* depuis la racine du projet ; pas besoin de hacker sys.path.
+pythonpath = ["."]

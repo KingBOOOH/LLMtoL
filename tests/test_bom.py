@@ -6,10 +6,7 @@ vignette : elle ne doit JAMAIS fuir dans le CSV, qui est un livrable.
 """
 
 import csv
-import os
-import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.bom import FIELDNAMES, build_bom, write_bom
 from src.compiler import compile_design
 from src.tiler import tile

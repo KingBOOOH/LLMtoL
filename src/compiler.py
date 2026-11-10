@@ -11,7 +11,6 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.dsl_schema import PALETTE_NAMES, validate_design
 from src.primitives import cylinder as _cylinder_mask
 from src.primitives import sphere as _sphere_mask

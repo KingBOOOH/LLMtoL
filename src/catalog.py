@@ -1,7 +1,7 @@
 """Catalogue de pieces LEGO (Phase 1, tache 1.2).
 
 Les references LDraw (PARTS) et les codes couleur (PALETTE) ont ete verifies contre la
-bibliotheque LDraw installee dans C:\\Users\\Utilisateur\\OneDrive\\Documents\\LDraw\\ldraw
+bibliotheque LDraw installee sur le poste de dev (dossier Documents/LDraw/ldraw)
 (verify_catalog() confirme les 24 pieces presentes ; les codes couleur et valeurs RGB de
 PALETTE sont lus directement depuis LDConfig.ldr de cette bibliotheque, pas recopies de
 memoire — regle du plan). Les noms cles de PALETTE (ex. "dark_gray") restent notre

@@ -7,7 +7,6 @@ le role de designer.py + validator.py en aval.
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.dsl_schema import resoudre_bornes, resoudre_plancher
 from src.llm_client import LLMCallError, call_llm
 

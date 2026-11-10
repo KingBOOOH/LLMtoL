@@ -1,9 +1,6 @@
-import os
-import sys
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.compiler import compile_design
 from src.primitives import (
     build_reference,

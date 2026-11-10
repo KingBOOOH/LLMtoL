@@ -1,12 +1,9 @@
 import itertools
-import os
-import sys
 from pathlib import Path
 
 import pytest
 from jsonschema import Draft202012Validator, ValidationError
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.dsl_schema import SCHEMA, validate_design
 
 
