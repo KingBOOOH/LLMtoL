@@ -46,7 +46,7 @@ LM_STUDIO_URL = os.environ.get("LM_STUDIO_URL",
 # Modele a utiliser. Doit etre CHARGE dans LM Studio, pas seulement telecharge.
 # Attention : le system prompt et le "Structured Output" configures sur ce modele
 # dans l'interface LM Studio s'appliquent en fallback silencieux aux requetes API
-# qui n'envoient pas leur propre response_format (voir README).
+# qui n'envoient pas leur propre response_format (voir docs/guide-complet.md).
 LM_STUDIO_MODEL = os.environ.get("LM_STUDIO_MODEL", "qwen/qwen3-coder-30b")
 
 # Modele VISION du juge visuel (US V2-01), interroge sur la MEME URL que le

@@ -209,7 +209,7 @@ def test_la_calibration_rapporte_les_deux_verites_terrain(tmp_path):
     """voxel_iou punit une rotation, le juge ne peut pas la voir : il regarde une image
     et le prompt du jeu de test n'impose aucune orientation. Correler contre le seul
     voxel_iou ferait porter au juge un defaut connu de la verite terrain — c'est ce qui
-    se mesure sur prim_escalier (IoU 0,200, note du juge 9/10, forme exacte au README).
+    se mesure sur prim_escalier (IoU 0,200, note du juge 9/10, forme exacte dans docs/guide-complet.md).
     La calibration doit donc rendre les deux, et l'oriente ne peut pas etre inferieur.
     """
     from tools.calibrer_juge import iou_du_dossier

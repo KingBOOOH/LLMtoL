@@ -343,7 +343,7 @@ Priorité 1 :
   juge le nom et refuse. Trois barèmes essayés, tous entre 0,38 et 0,43 : le barème n'est
   pas le levier, et un quatrième reviendrait à optimiser un prompt contre le jeu de test.
   Le code reste, désactivé par défaut (LEGO_VLM_MODEL vide) : src/juge_vlm.py,
-  tools/calibrer_juge.py. Chiffres et images : docs/mesures.md, README.
+  tools/calibrer_juge.py. Chiffres et images : docs/mesures.md, docs/guide-complet.md.
   Deux pistes restent, aucune essayée :
     - CLIP (plonger image et prompt, cosinus) : coûte torch, ~2,5 Go, pour un projet qui a
       quatre dépendances. À peser.

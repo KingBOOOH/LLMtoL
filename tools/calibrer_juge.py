@@ -18,7 +18,7 @@ CE QUI SE PASSE ENSUITE :
                          generation. C'est un resultat, pas un echec : un juge faible
                          sur une tache que le generateur rate deja donne un signal
                          bruite sans dire lequel des deux est casse.
-Dans les deux cas le chiffre va au README. Publier une mauvaise mesure coute moins
+Dans les deux cas le chiffre va dans docs/guide-complet.md. Publier une mauvaise mesure coute moins
 cher que de la refaire dans six mois.
 
 PIEGE A REGARDER AVANT DE CONCLURE : la sphere du projet est ronde dans la grille mais
@@ -72,7 +72,7 @@ def iou_du_dossier(work_dir, reference):
 
     Pourquoi les deux : voxel_iou ne tourne pas les grilles, donc il punit un escalier
     parfaitement correct construit dans l'autre sens (prim_escalier, diagnostique dans
-    le README : 0,429 tel quel, 1,000 a rotation autorisee). Or le juge regarde une
+    docs/guide-complet.md : 0,429 tel quel, 1,000 a rotation autorisee). Or le juge regarde une
     IMAGE — il n'a aucun moyen de savoir quelle orientation etait attendue, et le prompt
     du jeu de test ne la dit pas. Correler sa note contre voxel_iou mesurerait donc en
     partie un defaut connu de la verite terrain, pas la qualite du juge.

@@ -29,7 +29,7 @@ PALETTE_NAMES = [
 BBOX_MAX = [48, 48, 60]
 
 # Tailles nommees exposees a l'utilisateur. Valeurs de depart, a ajuster une fois le
-# nombre de pieces reellement obtenu mesure pour chacune (cf. README).
+# nombre de pieces reellement obtenu mesure pour chacune (cf. docs/guide-complet.md).
 TAILLES = {
     "petite": [16, 16, 20],
     "moyenne": [28, 28, 36],

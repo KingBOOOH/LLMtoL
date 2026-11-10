@@ -1,6 +1,6 @@
 # Flux de données — types exacts et exemples réels
 
-Ce document complète la section « Les flux de données » du README, qui dit où chaque
+Ce document complète la section « Les flux de données » du guide complet, qui dit où chaque
 donnée **atterrit**. Celui-ci dit **de quel type** elle est, **à quoi elle ressemble**, et
 **qui la passe à qui**.
 
