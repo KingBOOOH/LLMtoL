@@ -1406,3 +1406,7 @@ C'est délibérément plus facile : c'est tout l'intérêt de l'opération.
 aucune métrique ne dit aujourd'hui si le résultat *ressemble* au prompt. LM Studio sert
 plusieurs modèles simultanément, donc un VLM qui note `render_iso.png` est faisable ; à
 calibrer d'abord sur le jeu primitives, où l'IoU fournit la vérité terrain.
+
+## Licence
+
+Code sous licence MIT (voir `LICENSE`). La bibliothèque LDraw n'est pas incluse dans ce dépôt : elle reste sous sa propre licence (Creative Commons Attribution 2.0 et 4.0, voir plus haut).
