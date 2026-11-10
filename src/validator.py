@@ -11,12 +11,10 @@ validation elle-meme). Les messages referencent piece/position, ce qui reste lar
 actionnable pour une boucle de reparation.
 """
 
-import os
 import sys
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.tiler import joint_alignment_rate
 
 _NEIGHBORS_6 = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)]

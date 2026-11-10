@@ -9,12 +9,8 @@ Tout est teste sans base ni thread reel : `boucle_signe_de_vie` accepte une fabr
 de session et une fonction d'emission injectables.
 """
 
-import os
-import sys
 import threading
 from pathlib import Path
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 class _SessionFactice:

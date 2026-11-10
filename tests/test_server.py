@@ -9,12 +9,8 @@ fastapi n'est installe que dans le conteneur, donc un test qui importerait
 server/app.py ne tournerait nulle part sur l'hote.
 """
 
-import os
 import re
-import sys
 from pathlib import Path
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from server.regles import (
     EN_VOL,

@@ -5,10 +5,7 @@ reseau, donc le test tourne meme LM Studio eteint. C'est voulu — un test qui a
 besoin du serveur ne serait jamais lance au bon moment.
 """
 
-import os
-import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from tools.check_env import detect_default_override
 
 

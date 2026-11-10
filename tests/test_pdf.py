@@ -6,12 +6,10 @@ navigateur n'est installe — la suite doit rester verte sur une machine nue.
 """
 
 import os
-import sys
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src import pdf
 from src.bom import build_bom
 from src.compiler import compile_design

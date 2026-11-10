@@ -15,7 +15,6 @@ import os
 import sys
 from collections import Counter
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.catalog import PALETTE
 
 KIND_LABELS = {"brick": "brique", "plate": "plate", "tile": "tile"}

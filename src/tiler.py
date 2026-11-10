@@ -9,13 +9,10 @@ bord de la couche z-1 (regle de maconnerie : evite que le mur se fende verticale
 La piece 3024 (plate 1x1) garantit toujours une couverture : l'algorithme se termine.
 """
 
-import os
-import sys
 from collections import namedtuple
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.catalog import DIRECTION_RAMPE, PARTS, est_une_pente
 
 # `retournee` ajoute le demi-tour : avec `rotated` elle donne les QUATRE orientations

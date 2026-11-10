@@ -11,12 +11,8 @@ Trois conditions, et chacune a son test ici :
     puisqu'il ne connait que l'empreinte haute.
 """
 
-import os
-import sys
 
 import numpy as np
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.catalog import DIRECTION_RAMPE, PARTS, est_une_pente
 from src.ldraw_writer import IDENTITY, MATRICES, ROTATE_90_Y, ROTATE_180_Y, ROTATE_270_Y

@@ -14,14 +14,12 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 import tempfile
 import unicodedata
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.validator import resume_constructibilite
 
 INDEX = Path(__file__).resolve().parent.parent / "server" / "static" / "index.html"
