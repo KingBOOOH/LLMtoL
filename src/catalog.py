@@ -72,7 +72,7 @@ PARTS = [
 ]
 
 # Geometrie des pentes, VERIFIEE EMPIRIQUEMENT et non supposee (methode et rendu dans
-# le README) : les sommets de 3040b.dat, sous-fichiers resolus, donnent
+# docs/guide-complet.md) : les sommets de 3040b.dat, sous-fichiers resolus, donnent
 #   X -10..10 (1 tenon)   Z -30..10 (2 tenons)   Y -4..24 (1 brique + tenons)
 # L'extension en Z n'est PAS centree sur l'origine : la piece est centree sur son tenon
 # HAUT (Z -10..10) et sa rampe descend vers -Z, soit -y interne avec la matrice

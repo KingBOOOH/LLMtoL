@@ -12,7 +12,7 @@ Trois choix a ne pas defaire :
    reponse sure et gratuite (src.validator) par une opinion.
 2. SORTIE CONTRAINTE PAR SCHEMA. Une note entiere bornee, pas du texte a parser. Ca
    immunise aussi le juge contre le Structured Output herite que LM Studio reinjecte
-   dans toute requete sans response_format (voir README).
+   dans toute requete sans response_format (voir docs/guide-complet.md).
 3. PASSE SEPAREE, APRES LES RENDUS. Le juge ne s'insere pas dans la generation : il
    lit des .png sur disque. Generateur et VLM n'ont donc jamais a etre charges en
    meme temps.
